@@ -10,25 +10,67 @@ pubKey + privKey: key pair to validate connecting art nodes
 
 package main
 
+import "./blockartlib"
+
 import "os"
+import "net"
 import "net/rpc"
 import "time"
+import "fmt"
+
+type MinerKey int
 
 type Register struct {
 	MinerAddr string
 	PubKey string
 }
 
-type HeartBeat struct {
+type MinerPubKey struct {
 	PubKey string
 }
 
+type MinerInfo struct {
+	MinerAddr string
+	PubKey string
+	Cli *rpc.Client
+}
+
+type ArtNodeInfo struct {
+	PubKey string
+}
+
+// Keeps track of all miners that are connected to this miner. (array/slice or map???)
+var connectedMinerMap []MinerInfo
+
+// Keeps track of all art nodes that are connected to this miner.
+var connectedArtNodeMap = make(map[string]ArtNodeInfo)
+
+
+// FUNCTION CALLS
+
+// Registers incoming Miner that wants to connect.
+func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *string) error {
+	// TODO: Add the Miner Info to the map or array.
+	cli, _ := rpc.Dial("tcp", minerInfo.MinerAddr)
+
+}
+
+
+// HELPER FUNCTIONS
+
 // Initializes the heartbeat sends message to the server (message is the public key of miner so the server will remember it).
-func InitHeartbeat(cli *rpc.Client, pubKey string) {
+func InitHeartbeat(cli *rpc.Client, pubKey string, heartBeat uint32) {
 	for {
-		cli.Call("ServerKey.Heartbeat", Heartbeat{PubKey: pubKey}, &reply)
-		time.Sleep(2 * time.Second)
+		var reply string
+		err := cli.Call("ServerKey.Heartbeat", MinerPubKey{PubKey: pubKey}, &reply)
+		HandleError(err)
+		time.Sleep(heartBeat * time.Millisecond)
 	}
+}
+
+// Connect to the miners that the server has given.
+func ConnectToMiners(addrSet []string) {
+	// TODO: Traverse through list, dial the miner's address given in list, call RegisterMiner to notify the other miner.
 }
 
 func main() {
@@ -42,13 +84,24 @@ func main() {
 	minerKey := new(MinerKey)
 	rpc.Register(minerKey)
 
+	var settings blockartlib.MinerNetSettings{}
+	err := cli.Call("ServerKey.Register", Register{MinerAddr: minerAddr, PubKey: pubKey}, &settings)
+	HandleError(err)
 
-	var reply string
-	settings, err := cli.Call("ServerKey.Register", Register{MinerAddr: minerAddr, PubKey: pubKey}, &reply)
+	go InitHeartbeat(cli, pubKey, settings.HeartBeat)
 
-	go InitHeartbeat(cli, pubKey)
+	lis, _ := net.Listen("tcp", minerAddr)
+	go rpc.Accept(lis)
 
-	// TODO: Listens for other miners/artnodes
-	// TODO: Connects to other the other miners with reply
+	var addrSet []string
+	err = cli.Call("ServerKey.GetNodes", MinerPubKey{PubKey: pubKey}, &addrSet)
+	HandleError(err)
 
+	ConnectToMiners(addrSet)
+}
+
+func HandleError(err error) {
+	if (err != nil) {
+		fmt.Println(err)
+	}
 }
