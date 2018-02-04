@@ -11,15 +11,21 @@ package main
 
 // Expects blockartlib.go to be in the ./blockartlib/ dir, relative to
 // this art-app.go file
-import "./blockartlib"
-
-import "fmt"
-import "os"
-import "crypto/ecdsa"
+import (
+		"./blockartlib"
+		"net"
+		"time"
+		"bufio"
+		"fmt"
+		"os"
+ 		"crypto/ecdsa")
 
 func main() {
 	minerAddr := "127.0.0.1:8080"
 	privKey := // TODO: use crypto/ecdsa to read pub/priv keys from a file argument.
+
+	// function listens in to ink miners that may want to connect to art node
+	listenerForMiner(":8080")
 
 	// Open a canvas.
 	canvas, settings, err := blockartlib.OpenCanvas(minerAddr, privKey)
@@ -63,4 +69,51 @@ func checkError(err error) error {
 		return err
 	}
 	return nil
+}
+
+
+
+// handles the tcp connection to listen into oncoming ink miners trying to connect to this art node
+// addr is the port used
+func listenerForMiner(addr string){
+
+	listener, err:= net.Listen("tcp", addr)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println(err)
+			break
+		}
+		go registerInkMiner(conn)
+	}
+
+}
+
+
+// function for the art node to take in information about the ink miner
+func registerInkMiner(conn net.Conn) {
+
+	// timeout the register of the ink miner if it fails to connect within some amount of seconds
+	timeoutDuration := 2 * time.Second
+	bufReader := bufio.NewReader(conn)
+
+	for {
+		conn.SetReadDeadline(time.Now().Add(timeoutDuration))
+
+		// TODO:
+		// INCOMPLETE
+		// depending the the structure of the ink miner add on to this to get the necessary information regarding the ink miner
+
+		bytes, err := bufReader.ReadBytes('\n')
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+	}
+
 }
