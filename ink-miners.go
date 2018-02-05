@@ -10,13 +10,18 @@ pubKey + privKey: key pair to validate connecting art nodes
 
 package main
 
-import "./blockartlib"
+import (
+	"./blockartlib"
 
-import "os"
-import "net"
-import "net/rpc"
-import "time"
-import "fmt"
+	"os"
+	"net"
+	"net/rpc"
+	"time"
+	"fmt"
+	"crypto/md5"
+	"encoding/hex"
+	"strconv"
+)
 
 type MinerKey int
 
@@ -39,8 +44,21 @@ type ArtNodeInfo struct {
 	PubKey string
 }
 
+type Block struct {
+	PreviousHash string
+	SetOPs []Operation
+	MinerPubKey string
+	Nonce uint32
+}
+
+type Operation struct {
+	ShapeType blockartlib.ShapeType
+	OPSignature string
+	ArtNodePubKey string
+}
+
 // Keeps track of all miners that are connected to this miner. (array/slice or map???)
-var connectedMinerMap []MinerInfo
+var connectedMiners []MinerInfo
 
 // Keeps track of all art nodes that are connected to this miner.
 var connectedArtNodeMap = make(map[string]ArtNodeInfo)
@@ -64,13 +82,29 @@ func InitHeartbeat(cli *rpc.Client, pubKey string, heartBeat uint32) {
 		var reply string
 		err := cli.Call("ServerKey.Heartbeat", MinerPubKey{PubKey: pubKey}, &reply)
 		HandleError(err)
-		time.Sleep(heartBeat * time.Millisecond)
+		time.Sleep(int(heartBeat) * time.Millisecond)
 	}
 }
 
 // Connect to the miners that the server has given.
 func ConnectToMiners(addrSet []string) {
 	// TODO: Traverse through list, dial the miner's address given in list, call RegisterMiner to notify the other miner.
+}
+
+// Returns the MD5 hash as a hex string for the OP Block (prev-hash + op + op-signature + pub-key + nonce) or No-OP Block (prev-hash + pub-key + nonce).
+// Nonce is the secret for this assignment, keep increasing Nonce to find a hash with correct trailing number of zeroes.
+func ComputeBlockHash(block Block) string {
+	h := md5.New()
+	hash := block.PreviousHash
+	// this states if it is an op block (has set of OPs) or not
+	if (len(block.SetOPs) > 0) {
+		for i := 0; i < len(block.SetOPs); i++ {
+			hash = hash + strconv.Itoa(block.SetOPs[i].ShapeType) + block.SetOPs[i].OPSignature
+		}
+	}
+	h.Write([]byte(hash + block.MinerPubKey + block.Nonce))
+	str := hex.EncodeToString(h.Sum(nil))
+	return str
 }
 
 func main() {
@@ -93,7 +127,7 @@ func main() {
 	lis, _ := net.Listen("tcp", minerAddr)
 	go rpc.Accept(lis)
 
-	var addrSet []string
+	var addrSet []net.Addr
 	err = cli.Call("ServerKey.GetNodes", MinerPubKey{PubKey: pubKey}, &addrSet)
 	HandleError(err)
 
