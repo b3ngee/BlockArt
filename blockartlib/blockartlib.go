@@ -28,6 +28,17 @@ type CanvasSettings struct {
 	CanvasYMax uint32
 }
 
+
+// A MinerOnCanvas will have the information about miners on the canvas
+type MinerOnCanvas struct {
+	MinerAddress	string
+	PrivateKey		ecdsa.PrivateKey
+
+}
+
+
+
+
 // Settings for an instance of the BlockArt project/network.
 type MinerNetSettings struct {
 	// Hash of the very first (empty) block in the chain.
@@ -193,7 +204,52 @@ type Canvas interface {
 // Can return the following errors:
 // - DisconnectedError
 func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, setting CanvasSettings, err error) {
-	// TODO
+	
+
+	// provide canvas with a mineraddress and a privatekey
+	canvas = MinerOnCanvas{MinerAddress: minerAddr,
+							 PrivateKey: privKey}
+
+
+
 	// For now return DisconnectedError
-	return nil, CanvasSettings{}, DisconnectedError("")
+	return canvas, setting, err
 }
+
+
+////////////////////////////////////////////
+// implementation of the MinerOnCanvas which is essenitially an art node connected to
+// a ink miner that will have all the functions from the interface blockartlob.go
+
+func (miner MinerOnCanvas) CloseCanvas() (inkRemaining uint32, err error){
+	return inkRemaining, err
+}
+
+func (miner MinerOnCanvas) GetChildren(blockHash string) (blockHashes []string, err error) {
+	return blockHashes, err
+}
+
+func (miner MinerOnCanvas) GetGenesisBlock() (blockHash string, err error){
+	return blockHash, err
+}
+
+func (miner MinerOnCanvas) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error){
+	return shapeHash, blockHash, inkRemaining, err
+}
+
+func (miner MinerOnCanvas) GetSvgString(shapeHash string) (svgString string, err error){
+	return svgString, err
+}
+
+func (miner MinerOnCanvas) GetInk() (inkRemaining uint32, err error){
+	return inkRemaining, err
+}
+
+func (miner MinerOnCanvas) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error){
+	return inkRemaining, err
+}
+
+func (miner MinerOnCanvas) GetShapes(blockHash string) (shapeHashes []string, err error){
+	return shapeHashes, err
+}
+
