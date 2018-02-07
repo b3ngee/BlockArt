@@ -88,6 +88,37 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) 
 	return err
 }	
 
+// function to create a block
+func GenerateBlock(){
+
+	// TODO 
+	// once we compute whatever and the block gets generated, call the function
+	// SendBlock in order to create the block information and then broadcast the new block
+	// to all the other miners in the network of connectedMiners[]
+
+	//SendBlockInfo(hash, operations, publickey, nonce)
+}
+
+// send out the block information to another peer
+func SendBlockInfo(prevHash String, operations []Operation, minerPubKey ecdsa.PublicKey, nonce uint32) error {
+
+	for miner := range connectedMiners {
+		currentMinerAddress, err := rpc.Dial("tcp", miner.Address.String())
+
+		block := Block{PreviousHash: prevHash, 
+			SetOPs:	operations,
+			MinerPubKey: minerPubKey,
+			Nonce: 	nonce}
+
+		blockPayload, err := json.Marshal(block)
+		HandleError(err, "could not create block json to send")	
+
+		currentMinerAddress.Write(blockPayload)
+		currentMinerAddress.Close()
+	}
+	return err
+}	
+
 
 // HELPER FUNCTIONS
 
