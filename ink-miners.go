@@ -18,12 +18,12 @@ import (
 	"net/rpc"
 	"time"
 	"fmt"
-	"crypto/md5"
+	// "crypto/md5"
 	"crypto/rand"
 	"crypto/elliptic"
 	"crypto/ecdsa"
-	"encoding/hex"
-	"strconv"
+	// "encoding/hex"
+	// "strconv"
 	"encoding/gob"
 )
 
@@ -39,30 +39,36 @@ type MinerPubKey struct {
 }
 
 type Miner struct {
-	MinerAddr string
-	PubKey string
+	Address net.Addr
+	Key ecdsa.PublicKey
 	Cli *rpc.Client
 }
 
 type ArtNodeInfo struct {
-	PubKey string
+	PubKey ecdsa.PublicKey
 }
 
 type Block struct {
 	PreviousHash string
 	SetOPs []Operation
-	MinerPubKey string
+	MinerPubKey ecdsa.PublicKey
 	Nonce uint32
 }
 
 type Operation struct {
 	ShapeType blockartlib.ShapeType
 	OPSignature string
-	ArtNodePubKey string
+	ArtNodePubKey ecdsa.PublicKey
 }
 
+// Keeps track of all the keys & Miner Address so miner can send it to other miners.
+// var privKey ecdsa.PrivateKey
+var pubKey ecdsa.PublicKey
+
+var minerAddr net.Addr
+
 // Keeps track of all miners that are connected to this miner. (array/slice or map???)
-var connectedMiners []Miner
+var connectedMiners = make(map[string]Miner)
 
 // Keeps track of all art nodes that are connected to this miner.
 var connectedArtNodeMap = make(map[string]ArtNodeInfo)
@@ -71,11 +77,15 @@ var connectedArtNodeMap = make(map[string]ArtNodeInfo)
 // FUNCTION CALLS
 
 // Registers incoming Miner that wants to connect.
-func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *string) error {
-	// TODO: Add the Miner Info to the map or array.
-	// cli, _ := rpc.Dial("tcp", minerInfo.MinerAddr)
+func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) error {
+	cli, err := rpc.Dial("tcp", minerInfo.Address.String())
 
-	return nil
+	miner := Miner{Address: minerInfo.Address, Key: minerInfo.Key, Cli: cli}
+	connectedMiners[miner.Address.String()] = miner
+
+	*reply = MinerInfo{Address: minerAddr, Key: pubKey}
+
+	return err
 }	
 
 
@@ -84,33 +94,42 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *string) err
 // Initializes the heartbeat sends message to the server (message is the public key of miner so the server will remember it).
 func InitHeartbeat(cli *rpc.Client, pubKey ecdsa.PublicKey, heartBeat uint32) {
 	for {
-		var reply string
-		err := cli.Call("RServer.Heartbeat", MinerPubKey{PubKey: pubKey}, &reply)
+		var reply bool
+		err := cli.Call("RServer.HeartBeat", pubKey, &reply)
 		HandleError(err)
-		time.Sleep(time.Duration(heartBeat) * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
 // Connect to the miners that the server has given.
-func ConnectToMiners(addrSet []string) {
-	// TODO: Traverse through list, dial the miner's address given in list, call RegisterMiner to notify the other miner.
+func ConnectToMiners(addrSet []net.Addr, currentAddress net.Addr, currentPubKey ecdsa.PublicKey) {
+	for i := 0; i < len(addrSet); i++ {
+
+		cli, err := rpc.Dial("tcp", addrSet[i].String())
+
+		var reply MinerInfo
+		err = cli.Call("MinerKey.RegisterMiner", MinerInfo{Address: currentAddress, Key: currentPubKey}, &reply)
+		HandleError(err)
+
+		connectedMiners[reply.Address.String()] = Miner{Address: reply.Address, Key: reply.Key, Cli: cli}
+	}
 }
 
 // Returns the MD5 hash as a hex string for the OP Block (prev-hash + op + op-signature + pub-key + nonce) or No-OP Block (prev-hash + pub-key + nonce).
 // Nonce is the secret for this assignment, keep increasing Nonce to find a hash with correct trailing number of zeroes.
-func ComputeBlockHash(block Block) string {
-	h := md5.New()
-	hash := block.PreviousHash
-	// this states if it is an op block (has set of OPs) or not
-	if (len(block.SetOPs) > 0) {
-		for i := 0; i < len(block.SetOPs); i++ {
-			hash = hash + string(block.SetOPs[i].ShapeType) + block.SetOPs[i].OPSignature
-		}
-	}
-	h.Write([]byte(hash + block.MinerPubKey + strconv.Itoa(int(block.Nonce))))
-	str := hex.EncodeToString(h.Sum(nil))
-	return str
-}
+// func ComputeBlockHash(block Block) string {
+// 	h := md5.New()
+// 	hash := block.PreviousHash
+// 	// this states if it is an op block (has set of OPs) or not
+// 	if (len(block.SetOPs) > 0) {
+// 		for i := 0; i < len(block.SetOPs); i++ {
+// 			hash = hash + string(block.SetOPs[i].ShapeType) + block.SetOPs[i].OPSignature
+// 		}
+// 	}
+// 	h.Write([]byte(hash + block.MinerPubKey + strconv.Itoa(int(block.Nonce))))
+// 	str := hex.EncodeToString(h.Sum(nil))
+// 	return str
+// }
 
 func main() {
 	gob.Register(&net.TCPAddr{})
@@ -120,12 +139,11 @@ func main() {
 	// pubKey := os.Args[2]
 	// privKey := os.Args[3]
 
-	priv, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-	pubKey := priv.PublicKey
-	// privKey := *priv
+	privKey, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	pubKey = privKey.PublicKey
 
 	lis, err := net.Listen("tcp", ":0")
-	minerAddr := lis.Addr()
+	minerAddr = lis.Addr()
 
 	cli, _ := rpc.Dial("tcp", serverAddr)
 
@@ -133,10 +151,9 @@ func main() {
 	rpc.Register(minerKey)
 
 	var settings blockartlib.MinerNetSettings
-
 	err = cli.Call("RServer.Register", MinerInfo{Address: minerAddr, Key: pubKey}, &settings)
 	HandleError(err)
-	fmt.Println(settings)
+	// fmt.Println(settings)
 
 	go InitHeartbeat(cli, pubKey, settings.HeartBeat)
 
@@ -146,7 +163,10 @@ func main() {
 	err = cli.Call("RServer.GetNodes", pubKey, &addrSet)
 	HandleError(err)
 
-	// ConnectToMiners(addrSet)
+	ConnectToMiners(addrSet, minerAddr, pubKey)
+	// for {
+
+	// }
 }
 
 func HandleError(err error) {

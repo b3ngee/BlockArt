@@ -181,8 +181,9 @@ type MinerInfo struct {
 // Function to delete dead miners (no recent heartbeat)
 func monitor(k string, heartBeatInterval time.Duration) {
 	for {
-		fmt.Println(k)
 		allMiners.Lock()
+		// fmt.Println(time.Now().UnixNano()-allMiners.all[k].RecentHeartbeat)
+		// fmt.Println(int64(heartBeatInterval))
 		if time.Now().UnixNano()-allMiners.all[k].RecentHeartbeat > int64(heartBeatInterval) {
 			outLog.Printf("%s timed out\n", allMiners.all[k].Address.String())
 			delete(allMiners.all, k)
