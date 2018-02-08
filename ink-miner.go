@@ -12,18 +12,20 @@ package main
 
 import (
 	"./blockartlib"
-
 	"os"
 	"net"
 	"net/rpc"
 	"time"
 	"fmt"
-	// "crypto/md5"
 	"crypto/rand"
 	"crypto/elliptic"
 	"crypto/ecdsa"
-	// "encoding/hex"
+	//"encoding/hex"
+	"encoding/json"
 	// "strconv"
+	// "strings"
+	// "crypto/md5"
+	"errors"
 	"encoding/gob"
 )
 
@@ -88,36 +90,83 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) 
 	return err
 }	
 
-// function to create a block
-func GenerateBlock(){
 
-	// TODO 
-	// once we compute whatever and the block gets generated, call the function
-	// SendBlock in order to create the block information and then broadcast the new block
-	// to all the other miners in the network of connectedMiners[]
+// placeholder for what this function must do
+func (minerKey *MinerKey) WriteBlock(block *Block, miner *Miner) error{
 
-	//SendBlockInfo(hash, operations, publickey, nonce)
-}
+	// minerIPPort := miner.minerAddr
+	// not sure how to connect to net.Addr type 
+	// for each miner there is a minerAddr, connect to that and send the block
 
-// send out the block information to another peer
-func SendBlockInfo(prevHash String, operations []Operation, minerPubKey ecdsa.PublicKey, nonce uint32) error {
+	conn, err := net.Dial("udp", "127.0.0.0.1:80")
+	payload, err := json.Marshal(block)
+	conn.Write(payload)
 
-	for miner := range connectedMiners {
-		currentMinerAddress, err := rpc.Dial("tcp", miner.Address.String())
+	defer conn.Close()
 
-		block := Block{PreviousHash: prevHash, 
-			SetOPs:	operations,
-			MinerPubKey: minerPubKey,
-			Nonce: 	nonce}
-
-		blockPayload, err := json.Marshal(block)
-		HandleError(err, "could not create block json to send")	
-
-		currentMinerAddress.Write(blockPayload)
-		currentMinerAddress.Close()
-	}
 	return err
 }	
+
+// send out the block information to peers in the connected network of miners
+func SendBlockInfo(block *Block) error {
+
+
+	for key, miner := range connectedMiners {
+
+		err := miner.Cli.Call("MinerKey.WriteBlock", block, miner)
+
+		if(err != nil){
+			delete(connectedMiners, key)
+		}
+
+		// cannot connect to said miner then delete from connectedMiners
+
+	}
+	return errors.New("Parse error")
+}	
+
+// once information about a block is received unpack that message and update ink-miner
+func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error{
+
+	// get the settings in config file to check for specific validation
+	var settings blockartlib.MinerNetSettings
+	
+	//Block validations:
+	// Check that the nonce for the block is valid: PoW is correct and has the right difficulty.
+	blockType := block.SetOPs
+	var i int = 0
+
+	if len(blockType) == 0 {
+		i = 1
+	} else {
+		i = 2
+	}
+
+	switch i {
+    case 1:
+        if settings.PoWDifficultyNoOpBlock != uint8(block.Nonce) {
+			return errors.New("No-op block proof of work does not match the zeroes of nonce")
+		}else {
+			//TODO
+			// continue validation
+			fmt.Println("No-op Block has the same zeroes as nonce")
+		}
+    case 2:
+        if settings.PoWDifficultyOpBlock != uint8(block.Nonce) {
+			return errors.New("op block proof of work does not match the zeroes of nonce")
+		}else {
+			//TODO
+			// continue validation
+			fmt.Println("op Block has the same zeroes as nonce")
+		}
+	}
+
+
+
+	return errors.New("failed to validate block")
+}
+
+
 
 
 // HELPER FUNCTIONS
@@ -184,6 +233,7 @@ func main() {
 	var settings blockartlib.MinerNetSettings
 	err = cli.Call("RServer.Register", MinerInfo{Address: minerAddr, Key: pubKey}, &settings)
 	HandleError(err)
+
 	// fmt.Println(settings)
 
 	go InitHeartbeat(cli, pubKey, settings.HeartBeat)
@@ -195,6 +245,8 @@ func main() {
 	HandleError(err)
 
 	ConnectToMiners(addrSet, minerAddr, pubKey)
+
+
 	// for {
 
 	// }
