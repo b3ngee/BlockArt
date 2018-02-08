@@ -11,22 +11,27 @@ pubKey + privKey: key pair to validate connecting art nodes
 package main
 
 import (
-	"./blockartlib"
-	"os"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/md5"
+	"crypto/rand"
+	"fmt"
 	"net"
 	"net/rpc"
+	"os"
+	"strconv"
+	"strings"
 	"time"
-	"fmt"
-	"crypto/rand"
-	"crypto/elliptic"
-	"crypto/ecdsa"
+
+	"./blockartlib"
 	//"encoding/hex"
+	"encoding/hex"
 	"encoding/json"
 	// "strconv"
 	// "strings"
 	// "crypto/md5"
-	"errors"
 	"encoding/gob"
+	"errors"
 )
 
 type MinerKey int
@@ -42,8 +47,8 @@ type MinerPubKey struct {
 
 type Miner struct {
 	Address net.Addr
-	Key ecdsa.PublicKey
-	Cli *rpc.Client
+	Key     ecdsa.PublicKey
+	Cli     *rpc.Client
 }
 
 type ArtNodeInfo struct {
@@ -52,14 +57,14 @@ type ArtNodeInfo struct {
 
 type Block struct {
 	PreviousHash string
-	SetOPs []Operation
-	MinerPubKey ecdsa.PublicKey
-	Nonce uint32
+	SetOPs       []Operation
+	MinerPubKey  ecdsa.PublicKey
+	Nonce        uint32
 }
 
 type Operation struct {
-	ShapeType blockartlib.ShapeType
-	OPSignature string
+	ShapeType     blockartlib.ShapeType
+	OPSignature   string
 	ArtNodePubKey ecdsa.PublicKey
 }
 
@@ -75,6 +80,8 @@ var connectedMiners = make(map[string]Miner)
 // Keeps track of all art nodes that are connected to this miner.
 var connectedArtNodeMap = make(map[string]ArtNodeInfo)
 
+// Keeps track of all blocks generated
+var blockList = []Block{}
 
 // FUNCTION CALLS
 
@@ -88,14 +95,38 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) 
 	*reply = MinerInfo{Address: minerAddr, Key: pubKey}
 
 	return err
-}	
+}
 
+// function to create a no-op block by default
+func GenerateNoOpBlock(difficulty int) {
+	prevBlock := blockList[len(blockList)-1]
+	zeroString := strings.Repeat("0", difficulty)
+	var secret string
+	for {
+		secret = ComputeBlockHash(prevBlock)
+		subString := secret[len(secret)-difficulty:]
+
+		if zeroString == subString {
+			// validate secret with other miners?
+			blockList = append(blockList, Block{PreviousHash: secret, MinerPubKey: pubKey})
+			break
+		}
+		prevBlock.Nonce = prevBlock.Nonce + 1
+	}
+
+	// TODO
+	// once we compute whatever and the block gets generated, call the function
+	// SendBlock in order to create the block information and then broadcast the new block
+	// to all the other miners in the network of connectedMiners[]
+
+	//SendBlockInfo(hash, operations, publickey, nonce)
+}
 
 // placeholder for what this function must do
-func (minerKey *MinerKey) WriteBlock(block *Block, miner *Miner) error{
+func (minerKey *MinerKey) WriteBlock(block *Block, miner *Miner) error {
 
 	// minerIPPort := miner.minerAddr
-	// not sure how to connect to net.Addr type 
+	// not sure how to connect to net.Addr type
 	// for each miner there is a minerAddr, connect to that and send the block
 
 	conn, err := net.Dial("udp", "127.0.0.0.1:80")
@@ -105,17 +136,16 @@ func (minerKey *MinerKey) WriteBlock(block *Block, miner *Miner) error{
 	defer conn.Close()
 
 	return err
-}	
+}
 
 // send out the block information to peers in the connected network of miners
 func SendBlockInfo(block *Block) error {
-
 
 	for key, miner := range connectedMiners {
 
 		err := miner.Cli.Call("MinerKey.WriteBlock", block, miner)
 
-		if(err != nil){
+		if err != nil {
 			delete(connectedMiners, key)
 		}
 
@@ -123,14 +153,14 @@ func SendBlockInfo(block *Block) error {
 
 	}
 	return errors.New("Parse error")
-}	
+}
 
 // once information about a block is received unpack that message and update ink-miner
-func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error{
+func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 
 	// get the settings in config file to check for specific validation
 	var settings blockartlib.MinerNetSettings
-	
+
 	//Block validations:
 	// Check that the nonce for the block is valid: PoW is correct and has the right difficulty.
 	blockType := block.SetOPs
@@ -143,31 +173,26 @@ func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error{
 	}
 
 	switch i {
-    case 1:
-        if settings.PoWDifficultyNoOpBlock != uint8(block.Nonce) {
+	case 1:
+		if settings.PoWDifficultyNoOpBlock != uint8(block.Nonce) {
 			return errors.New("No-op block proof of work does not match the zeroes of nonce")
-		}else {
+		} else {
 			//TODO
 			// continue validation
 			fmt.Println("No-op Block has the same zeroes as nonce")
 		}
-    case 2:
-        if settings.PoWDifficultyOpBlock != uint8(block.Nonce) {
+	case 2:
+		if settings.PoWDifficultyOpBlock != uint8(block.Nonce) {
 			return errors.New("op block proof of work does not match the zeroes of nonce")
-		}else {
+		} else {
 			//TODO
 			// continue validation
 			fmt.Println("op Block has the same zeroes as nonce")
 		}
 	}
 
-
-
 	return errors.New("failed to validate block")
 }
-
-
-
 
 // HELPER FUNCTIONS
 
@@ -197,19 +222,20 @@ func ConnectToMiners(addrSet []net.Addr, currentAddress net.Addr, currentPubKey 
 
 // Returns the MD5 hash as a hex string for the OP Block (prev-hash + op + op-signature + pub-key + nonce) or No-OP Block (prev-hash + pub-key + nonce).
 // Nonce is the secret for this assignment, keep increasing Nonce to find a hash with correct trailing number of zeroes.
-// func ComputeBlockHash(block Block) string {
-// 	h := md5.New()
-// 	hash := block.PreviousHash
-// 	// this states if it is an op block (has set of OPs) or not
-// 	if (len(block.SetOPs) > 0) {
-// 		for i := 0; i < len(block.SetOPs); i++ {
-// 			hash = hash + string(block.SetOPs[i].ShapeType) + block.SetOPs[i].OPSignature
-// 		}
-// 	}
-// 	h.Write([]byte(hash + block.MinerPubKey + strconv.Itoa(int(block.Nonce))))
-// 	str := hex.EncodeToString(h.Sum(nil))
-// 	return str
-// }
+func ComputeBlockHash(block Block) string {
+	h := md5.New()
+	hash := block.PreviousHash
+	// this states if it is an op block (has set of OPs) or not
+	if len(block.SetOPs) > 0 {
+		for i := 0; i < len(block.SetOPs); i++ {
+			hash = hash + string(block.SetOPs[i].ShapeType) + block.SetOPs[i].OPSignature
+		}
+	}
+	minerPubKey, _ := json.Marshal(block.MinerPubKey)
+	h.Write([]byte(hash + string(minerPubKey) + strconv.Itoa(int(block.Nonce))))
+	str := hex.EncodeToString(h.Sum(nil))
+	return str
+}
 
 func main() {
 	gob.Register(&net.TCPAddr{})
@@ -236,6 +262,10 @@ func main() {
 
 	// fmt.Println(settings)
 
+	blockList = append(blockList, Block{PreviousHash: settings.GenesisBlockHash})
+
+	GenerateNoOpBlock(int(settings.PoWDifficultyNoOpBlock))
+
 	go InitHeartbeat(cli, pubKey, settings.HeartBeat)
 
 	go rpc.Accept(lis)
@@ -246,14 +276,13 @@ func main() {
 
 	ConnectToMiners(addrSet, minerAddr, pubKey)
 
-
 	// for {
 
 	// }
 }
 
 func HandleError(err error) {
-	if (err != nil) {
+	if err != nil {
 		fmt.Println(err)
 	}
 }
