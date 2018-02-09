@@ -60,6 +60,7 @@ type Block struct {
 	SetOPs       []Operation
 	MinerPubKey  ecdsa.PublicKey
 	Nonce        uint32
+	InkAmount    uint32
 }
 
 type Operation struct {
@@ -83,6 +84,9 @@ var connectedArtNodeMap = make(map[string]ArtNodeInfo)
 // Keeps track of all blocks generated
 var blockList = []Block{}
 
+// Array of incoming operations
+var operations = []Operation{}
+
 // FUNCTION CALLS
 
 // Registers incoming Miner that wants to connect.
@@ -97,29 +101,55 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) 
 	return err
 }
 
-// function to create a no-op block by default
-func GenerateNoOpBlock(difficulty int) {
-	prevBlock := blockList[len(blockList)-1]
-	zeroString := strings.Repeat("0", difficulty)
-	var secret string
-	for {
-		secret = ComputeBlockHash(prevBlock)
-		subString := secret[len(secret)-difficulty:]
-
-		if zeroString == subString {
-			// validate secret with other miners?
-			blockList = append(blockList, Block{PreviousHash: secret, MinerPubKey: pubKey})
-			break
-		}
-		prevBlock.Nonce = prevBlock.Nonce + 1
-	}
-
+// TODO
+func validatedWithNetwork(block Block) bool {
 	// TODO
-	// once we compute whatever and the block gets generated, call the function
-	// SendBlock in order to create the block information and then broadcast the new block
-	// to all the other miners in the network of connectedMiners[]
+	return true
+}
 
-	//SendBlockInfo(hash, operations, publickey, nonce)
+func GenerateBlock(settings blockartlib.MinerNetSettings) {
+	for {
+		prevBlock := blockList[len(blockList)-1]
+		prevBlockHash := ComputeBlockHash(prevBlock)
+
+		var newBlock Block
+		var difficulty int
+
+		if len(operations) > 0 {
+			copyOfOps := make([]Operation, len(operations))
+			copy(copyOfOps, operations)
+			operations = operations[:0]
+
+			newBlock = Block{PreviousHash: prevBlockHash, SetOPs: copyOfOps, Nonce: 0, MinerPubKey: pubKey, InkAmount: settings.InkPerOpBlock}
+			difficulty = int(settings.PoWDifficultyOpBlock)
+		} else {
+			newBlock = Block{PreviousHash: prevBlockHash, Nonce: 0, MinerPubKey: pubKey, InkAmount: settings.InkPerNoOpBlock}
+			difficulty = int(settings.PoWDifficultyNoOpBlock)
+		}
+
+		zeroString := strings.Repeat("0", difficulty)
+
+		for {
+			hash := ComputeBlockHash(newBlock)
+			subString := hash[len(hash)-difficulty:]
+			if zeroString == subString {
+				// validate secret with other miners?
+				if validatedWithNetwork(newBlock) {
+					blockList = append(blockList, newBlock)
+
+					// TODO
+					// once we compute whatever and the block gets generated, call the function
+					// SendBlock in order to create the block information and then broadcast the new block
+					// to all the other miners in the network of connectedMiners[]
+					SendBlockInfo(&newBlock)
+				}
+				fmt.Println("this is block ", newBlock)
+				break
+			}
+			//fmt.Println(newBlock.Nonce)
+			newBlock.Nonce = newBlock.Nonce + 1
+		}
+	}
 }
 
 // placeholder for what this function must do
@@ -188,6 +218,7 @@ func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 			//TODO
 			// continue validation
 			fmt.Println("op Block has the same zeroes as nonce")
+
 		}
 	}
 
@@ -264,7 +295,7 @@ func main() {
 
 	blockList = append(blockList, Block{PreviousHash: settings.GenesisBlockHash})
 
-	GenerateNoOpBlock(int(settings.PoWDifficultyNoOpBlock))
+	GenerateBlock(settings)
 
 	go InitHeartbeat(cli, pubKey, settings.HeartBeat)
 
