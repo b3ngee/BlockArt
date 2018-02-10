@@ -56,11 +56,15 @@ type ArtNodeInfo struct {
 }
 
 type Block struct {
-	PreviousHash string
-	SetOPs       []Operation
-	MinerPubKey  ecdsa.PublicKey
-	Nonce        uint32
-	InkAmount    uint32
+	PreviousBlock *Block
+	PreviousHash  string
+	Hash          string
+	SetOPs        []Operation
+	MinerPubKey   ecdsa.PublicKey
+	Nonce         uint32
+	InkAmount     uint32
+	PathLength    int
+	IsEndBlock    bool
 }
 
 type Operation struct {
@@ -109,13 +113,15 @@ func validatedWithNetwork(block Block) bool {
 
 func GenerateBlock(settings blockartlib.MinerNetSettings) {
 	for {
-		prevBlock := blockList[len(blockList)-1]
-		prevBlockHash := ComputeBlockHash(prevBlock)
+		prevBlock := FindLastBlockOfLongestChain()
+		prevBlockHash := ComputeBlockHash(*prevBlock)
 
 		var newBlock Block
 		var difficulty int
+		var isNoOp bool
 
 		if len(operations) > 0 {
+			isNoOp = false
 			copyOfOps := make([]Operation, len(operations))
 			copy(copyOfOps, operations)
 			operations = operations[:0]
@@ -123,6 +129,7 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 			newBlock = Block{PreviousHash: prevBlockHash, SetOPs: copyOfOps, Nonce: 0, MinerPubKey: pubKey, InkAmount: settings.InkPerOpBlock}
 			difficulty = int(settings.PoWDifficultyOpBlock)
 		} else {
+			isNoOp = true
 			newBlock = Block{PreviousHash: prevBlockHash, Nonce: 0, MinerPubKey: pubKey, InkAmount: settings.InkPerNoOpBlock}
 			difficulty = int(settings.PoWDifficultyNoOpBlock)
 		}
@@ -130,26 +137,61 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 		zeroString := strings.Repeat("0", difficulty)
 
 		for {
+			if isNoOp && len(operations) > 0 {
+				break
+			}
+
 			hash := ComputeBlockHash(newBlock)
 			subString := hash[len(hash)-difficulty:]
 			if zeroString == subString {
 				// validate secret with other miners?
 				if validatedWithNetwork(newBlock) {
+					prevBlock.IsEndBlock = false
+
+					newBlock.PathLength = prevBlock.PathLength + 1
+					newBlock.PreviousBlock = prevBlock
+					newBlock.Hash = hash
+					newBlock.IsEndBlock = true
+
 					blockList = append(blockList, newBlock)
 
-					// TODO
-					// once we compute whatever and the block gets generated, call the function
-					// SendBlock in order to create the block information and then broadcast the new block
-					// to all the other miners in the network of connectedMiners[]
 					SendBlockInfo(&newBlock)
 				}
-				fmt.Println("this is block ", newBlock)
 				break
 			}
-			//fmt.Println(newBlock.Nonce)
 			newBlock.Nonce = newBlock.Nonce + 1
 		}
 	}
+}
+
+func FindLastBlockOfLongestChain() *Block {
+	var tempMaxLength int
+	var lastBlock *Block
+
+	for i := len(blockList) - 1; i >= 0; i-- {
+		currBlock := blockList[i]
+
+		if currBlock.IsEndBlock && currBlock.PathLength > tempMaxLength {
+			lastBlock = &blockList[i]
+			tempMaxLength = currBlock.PathLength
+		}
+	}
+
+	return lastBlock
+}
+
+func FindLongestBlockChain() []Block {
+	block := FindLastBlockOfLongestChain()
+	tempBlock := *block
+	longestChain := []Block{}
+
+	for i := block.PathLength; i > 1; i-- {
+		longestChain = append(longestChain, tempBlock)
+		tempBlock = *tempBlock.PreviousBlock
+	}
+
+	longestChain = append(longestChain, tempBlock)
+	return longestChain
 }
 
 // placeholder for what this function must do
@@ -293,7 +335,7 @@ func main() {
 
 	// fmt.Println(settings)
 
-	blockList = append(blockList, Block{PreviousHash: settings.GenesisBlockHash})
+	blockList = append(blockList, Block{Hash: settings.GenesisBlockHash, PathLength: 1, IsEndBlock: true})
 
 	GenerateBlock(settings)
 
