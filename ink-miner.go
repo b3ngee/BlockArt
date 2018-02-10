@@ -34,6 +34,8 @@ import (
 	"errors"
 )
 
+var settings blockartlib.MinerNetSettings
+
 type MinerKey int
 
 type MinerInfo struct {
@@ -228,15 +230,11 @@ func SendBlockInfo(block *Block) error {
 }
 
 // once information about a block is received unpack that message and update ink-miner
-func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
+func ReceiveBlock(block Block) error {
 
-	// get the settings in config file to check for specific validation
-	var settings blockartlib.MinerNetSettings
-
-	//Block validations:
-	// Check that the nonce for the block is valid: PoW is correct and has the right difficulty.
 	blockType := block.SetOPs
 	var i int = 0
+	var hash string = ComputeBlockHash(block)
 
 	if len(blockType) == 0 {
 		i = 1
@@ -244,27 +242,56 @@ func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 		i = 2
 	}
 
+
 	switch i {
 	case 1:
-		if settings.PoWDifficultyNoOpBlock != uint8(block.Nonce) {
-			return errors.New("No-op block proof of work does not match the zeroes of nonce")
-		} else {
+		if ComputeTrailingZeroes(hash, settings.PoWDifficultyNoOpBlock)  {
+			fmt.Println("No-op Block has the same zeroes as nonce")
 			//TODO
 			// continue validation
-			fmt.Println("No-op Block has the same zeroes as nonce")
+		} else {
+			fmt.Println("got to case 1 fail")
+			return errors.New("No-op block proof of work does not match the zeroes of nonce")
 		}
 	case 2:
-		if settings.PoWDifficultyOpBlock != uint8(block.Nonce) {
-			return errors.New("op block proof of work does not match the zeroes of nonce")
-		} else {
+		if ComputeTrailingZeroes(hash, settings.PoWDifficultyOpBlock) {
+			ValidateOperation(blockType)
+			fmt.Println("op Block has the same zeroes as nonce")
 			//TODO
 			// continue validation
-			fmt.Println("op Block has the same zeroes as nonce")
-
+		} else {
+			fmt.Println("got to case two fail")
+			return errors.New("No-op block proof of work does not match the zeroes of nonce")
 		}
 	}
+	//fmt.Println("No-op Block has the same zeroes as nonce")
+	return errors.New("failed to validate block")
+}
+
+// helper function for block validation
+func ComputeTrailingZeroes(hash string, num uint8) bool{
+
+	var i uint8 = 0
+	var numZeroesStr = ""
+
+	fmt.Println(hash)
+
+	for i = 1; i < num; i++ {
+		numZeroesStr += "0"
+	}
+
+	if strings.HasSuffix(hash, numZeroesStr) {
+		return true
+	}
+	return false
+}
+
+// call this for op-blocks to validate the op-block
+func ValidateOperation(operations []Operation) error {
+
 
 	return errors.New("failed to validate block")
+
 }
 
 // HELPER FUNCTIONS
@@ -337,7 +364,21 @@ func main() {
 
 	blockList = append(blockList, Block{Hash: settings.GenesisBlockHash, PathLength: 1, IsEndBlock: true})
 
-	GenerateBlock(settings)
+	/////////////////////////////////////////////
+	// VALIDATION TEXTING
+	// checking block validation
+	var singleop Operation = Operation{ShapeType: 5, OPSignature: "yolo", ArtNodePubKey: pubKey}
+	var operationsCheck []Operation
+	operationsCheck = append(operationsCheck, singleop)
+	previousTestBlock := Block{PreviousHash: "345", Hash: "1234"}
+	blocktocheck := Block{PreviousBlock: &previousTestBlock, PreviousHash: "1234", Hash: "yee",
+	 SetOPs: operationsCheck, MinerPubKey: pubKey, Nonce: 5, InkAmount: 6}
+	ReceiveBlock(blocktocheck)
+
+	///////////////////////////////////////////////
+
+
+	//GenerateBlock(settings)
 
 	go InitHeartbeat(cli, pubKey, settings.HeartBeat)
 
