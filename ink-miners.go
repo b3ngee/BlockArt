@@ -13,18 +13,18 @@ package main
 import (
 	"./blockartlib"
 
-	"os"
+	"fmt"
 	"net"
 	"net/rpc"
+	"os"
 	"time"
-	"fmt"
 	// "crypto/md5"
-	"crypto/rand"
-	"crypto/elliptic"
 	"crypto/ecdsa"
-	// "encoding/hex"
+	"crypto/elliptic"
 	// "strconv"
+	"crypto/x509"
 	"encoding/gob"
+	"encoding/hex"
 )
 
 type MinerKey int
@@ -40,8 +40,8 @@ type MinerPubKey struct {
 
 type Miner struct {
 	Address net.Addr
-	Key ecdsa.PublicKey
-	Cli *rpc.Client
+	Key     ecdsa.PublicKey
+	Cli     *rpc.Client
 }
 
 type ArtNodeInfo struct {
@@ -50,14 +50,14 @@ type ArtNodeInfo struct {
 
 type Block struct {
 	PreviousHash string
-	SetOPs []Operation
-	MinerPubKey ecdsa.PublicKey
-	Nonce uint32
+	SetOPs       []Operation
+	MinerPubKey  ecdsa.PublicKey
+	Nonce        uint32
 }
 
 type Operation struct {
-	ShapeType blockartlib.ShapeType
-	OPSignature string
+	ShapeType     blockartlib.ShapeType
+	OPSignature   string
 	ArtNodePubKey ecdsa.PublicKey
 }
 
@@ -73,7 +73,6 @@ var connectedMiners = make(map[string]Miner)
 // Keeps track of all art nodes that are connected to this miner.
 var connectedArtNodeMap = make(map[string]ArtNodeInfo)
 
-
 // FUNCTION CALLS
 
 // Registers incoming Miner that wants to connect.
@@ -86,8 +85,7 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) 
 	*reply = MinerInfo{Address: minerAddr, Key: pubKey}
 
 	return err
-}	
-
+}
 
 // HELPER FUNCTIONS
 
@@ -97,21 +95,38 @@ func InitHeartbeat(cli *rpc.Client, pubKey ecdsa.PublicKey, heartBeat uint32) {
 		var reply bool
 		err := cli.Call("RServer.HeartBeat", pubKey, &reply)
 		HandleError(err)
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(time.Duration(int(heartBeat)/5) * time.Millisecond)
 	}
 }
 
 // Connect to the miners that the server has given.
 func ConnectToMiners(addrSet []net.Addr, currentAddress net.Addr, currentPubKey ecdsa.PublicKey) {
 	for i := 0; i < len(addrSet); i++ {
+		// if the address is not already set, dial and register the miner
+		if _, ok := connectedMiners[addrSet[i].String()]; !ok {
+			cli, err := rpc.Dial("tcp", addrSet[i].String())
 
-		cli, err := rpc.Dial("tcp", addrSet[i].String())
+			var reply MinerInfo
+			err = cli.Call("MinerKey.RegisterMiner", MinerInfo{Address: currentAddress, Key: currentPubKey}, &reply)
+			HandleError(err)
 
-		var reply MinerInfo
-		err = cli.Call("MinerKey.RegisterMiner", MinerInfo{Address: currentAddress, Key: currentPubKey}, &reply)
+			connectedMiners[reply.Address.String()] = Miner{Address: reply.Address, Key: reply.Key, Cli: cli}
+		}
+
+	}
+}
+
+// This is goroutine to constantly call GetNodes() from the server every few seconds
+func CheckConnectedMiners(cli *rpc.Client, MinNumMinerConnections uint8) {
+	for {
+		var addrSet []net.Addr
+		err := cli.Call("RServer.GetNodes", pubKey, &addrSet)
 		HandleError(err)
 
-		connectedMiners[reply.Address.String()] = Miner{Address: reply.Address, Key: reply.Key, Cli: cli}
+		ConnectToMiners(addrSet, minerAddr, pubKey)
+
+		fmt.Println(connectedMiners)
+		time.Sleep(10 * time.Second)
 	}
 }
 
@@ -136,10 +151,10 @@ func main() {
 	gob.Register(&elliptic.CurveParams{})
 
 	serverAddr := os.Args[1]
-	// pubKey := os.Args[2]
-	// privKey := os.Args[3]
 
-	privKey, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	privateKeyBytesRestored, _ := hex.DecodeString(os.Args[3])
+	privKey, _ := x509.ParseECPrivateKey(privateKeyBytesRestored)
+
 	pubKey = privKey.PublicKey
 
 	lis, err := net.Listen("tcp", ":0")
@@ -164,13 +179,15 @@ func main() {
 	HandleError(err)
 
 	ConnectToMiners(addrSet, minerAddr, pubKey)
-	// for {
 
-	// }
+	go CheckConnectedMiners(cli, settings.MinNumMinerConnections)
+	for {
+
+	}
 }
 
 func HandleError(err error) {
-	if (err != nil) {
+	if err != nil {
 		fmt.Println(err)
 	}
 }
