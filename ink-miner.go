@@ -227,10 +227,18 @@ func SendBlockInfo(block *Block) error {
 
 // once information about a block is received unpack that message and update ink-miner
 func ReceiveBlock(block Block) error {
-
 	blockType := block.SetOPs
 	var i int = 0
 	var hash string = ComputeBlockHash(block)
+
+	
+	if CheckPreviousBlock(block.PreviousHash) {
+		fmt.Println("Block exists within the blockchain")
+	} else {
+		fmt.Println("Could not find a previousHash in any of previous generated blocks")
+		return errors.New("failed to validate hash of a previous block")
+	}
+
 
 	if len(blockType) == 0 {
 		i = 1
@@ -238,12 +246,11 @@ func ReceiveBlock(block Block) error {
 		i = 2
 	}
 
+
 	switch i {
 	case 1:
-		if ComputeTrailingZeroes(hash, settings.PoWDifficultyNoOpBlock) {
-			fmt.Println("No-op Block has the same zeroes as nonce")
-			//TODO
-			// continue validation
+		if ComputeTrailingZeroes(hash, settings.PoWDifficultyNoOpBlock)  {
+			fmt.Println("No-op Block has the same zeroes as nonce..... Finished Validating No-Op Block")
 		} else {
 			fmt.Println("got to case 1 fail")
 			return errors.New("No-op block proof of work does not match the zeroes of nonce")
@@ -263,26 +270,39 @@ func ReceiveBlock(block Block) error {
 	return errors.New("failed to validate block")
 }
 
-// helper function for block validation
-func ComputeTrailingZeroes(hash string, num uint8) bool {
 
+
+// returns a boolean true if hash contains specified number of zeroes num at the end
+func ComputeTrailingZeroes(hash string, num uint8) bool{
 	var i uint8 = 0
 	var numZeroesStr = ""
-
-	fmt.Println(hash)
-
 	for i = 1; i < num; i++ {
 		numZeroesStr += "0"
 	}
-
+	// HARDCODED FOR NOW NEED TO FIX IT REAL EASY JUST NEED TO GET MINER SETTINGS
+	numZeroesStr = "00000"
 	if strings.HasSuffix(hash, numZeroesStr) {
 		return true
 	}
 	return false
 }
 
+// checks that the previousHash in the block struct points to a previous generated block's Hash
+func CheckPreviousBlock(hash string) bool{
+	for _, block := range blockList {
+		if block.Hash == hash {
+			return true
+		}
+		continue
+	}
+	return false
+}
+
+
+
 // call this for op-blocks to validate the op-block
 func ValidateOperation(operations []Operation) error {
+
 
 	return errors.New("failed to validate block")
 
@@ -360,12 +380,15 @@ func main() {
 	/////////////////////////////////////////////
 	// VALIDATION TEXTING
 	// checking block validation
+	blockList = append(blockList, Block{Hash: "345", PathLength: 1, IsEndBlock: true})
+	blockList = append(blockList, Block{Hash: "1234", PathLength: 1, IsEndBlock: true})
+	fmt.Println(len(blockList))
 	var singleop Operation = Operation{ShapeType: 5, OPSignature: "yolo", ArtNodePubKey: pubKey}
 	var operationsCheck []Operation
 	operationsCheck = append(operationsCheck, singleop)
 	previousTestBlock := Block{PreviousHash: "345", Hash: "1234"}
 	blocktocheck := Block{PreviousBlock: &previousTestBlock, PreviousHash: "1234", Hash: "yee",
-		SetOPs: operationsCheck, MinerPubKey: pubKey, Nonce: 5, InkAmount: 6}
+	 SetOPs: operationsCheck, MinerPubKey: pubKey, Nonce: 5, InkAmount: 6}
 	ReceiveBlock(blocktocheck)
 
 	///////////////////////////////////////////////
