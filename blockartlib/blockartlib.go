@@ -227,7 +227,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 		return nil, setting, DisconnectedError(minerAddr)
 	}
 
-	err = cli.Call("MinerKey.ValidateKey", ArtNodeKey{PubKey: pubKey}, &setting)
+	err = cli.Call("ArtKey.ValidateKey", ArtNodeKey{PubKey: pubKey}, &setting)
 	if err != nil {
 		return nil, setting, DisconnectedError(minerAddr)
 	}
@@ -251,7 +251,20 @@ func (canvasObj CanvasObj) GetChildren(blockHash string) (blockHashes []string, 
 }
 
 func (canvasObj CanvasObj) GetGenesisBlock() (blockHash string, err error) {
-	return blockHash, err
+	// Returns the block hash of the genesis block.
+	// Can return the following errors:
+	// - DisconnectedError
+
+	address := canvasObj.MinerAddress
+	cli, err := rpc.Dial("tcp", address)
+
+	var reply string
+	err = cli.Call("ArtKey.GetGenesisBlock", "", &reply)
+	if err != nil {
+		return "", DisconnectedError(address)
+	}
+
+	return reply, nil
 }
 
 func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
