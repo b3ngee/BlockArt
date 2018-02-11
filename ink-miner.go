@@ -264,76 +264,64 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 	}
 }
 
-func FindLastBlockOfLongestChain() *Block {
-	var tempMaxLength int
-	var lastBlock *Block
+func FindLastBlockOfLongestChain() []*Block {
+	tempMaxLength := -1
+	lastBlocks := []*Block{}
 
 	for i := len(blockList) - 1; i >= 0; i-- {
 		currBlock := blockList[i]
 
-		if currBlock.IsEndBlock && currBlock.PathLength > tempMaxLength {
-			lastBlock = &blockList[i]
-			tempMaxLength = currBlock.PathLength
+		if currBlock.IsEndBlock && currBlock.PathLength >= tempMaxLength {
+			if currBlock.PathLength > tempMaxLength {
+				lastBlocks = []*Block{}
+				tempMaxLength = currBlock.PathLength
+			}
+			lastBlocks = append(lastBlocks, &blockList[i])
 		}
 	}
 
-	return lastBlock
+	return lastBlocks
 }
 
-func FindLongestBlockChain() []Block {
-	block := FindLastBlockOfLongestChain()
+func FindBlockChainPath(block *Block) []Block {
 	tempBlock := *block
-	longestChain := []Block{}
+	path := []Block{}
 
 	for i := block.PathLength; i > 1; i-- {
-		longestChain = append(longestChain, tempBlock)
+		path = append(path, tempBlock)
 		tempBlock = *tempBlock.PreviousBlock
 	}
 
-	longestChain = append(longestChain, tempBlock)
-	return longestChain
+	path = append(path, tempBlock)
+	return path
 }
 
-// TODO: INCOMPLETE?
-// placeholder for what this function must do
-func (minerKey *MinerKey) WriteBlock(block *Block, miner *Miner) error {
-
-	// minerIPPort := miner.minerAddr
-	// not sure how to connect to net.Addr type
-	// for each miner there is a minerAddr, connect to that and send the block
-
-	conn, err := net.Dial("udp", "127.0.0.0.1:80")
-	payload, err := json.Marshal(block)
-	conn.Write(payload)
-
-	defer conn.Close()
-
-	return err
-}
 
 // TODO: INCOMPLETE?
 // send out the block information to peers in the connected network of miners
 func SendBlockInfo(block *Block) error {
 
+	replyStr := ""
+
 	for key, miner := range connectedMiners {
 
-		err := miner.Cli.Call("MinerKey.WriteBlock", block, miner)
+		err := miner.Cli.Call("MinerKey.ReceiveBlock", block, replyStr)
 
 		if err != nil {
 			delete(connectedMiners, key)
 		}
 
-		// cannot connect to said miner then delete from connectedMiners
-
 	}
 	return errors.New("Parse error")
 }
 
+
+
 // once information about a block is received unpack that message and update ink-miner
-func (minerKey *MinerKey) ReceiveBlock(block Block, reply *string) error {
+func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 	blockType := block.SetOPs
 	var i int = 0
-	var hash string = ComputeBlockHash(block)
+	var hash string = ComputeBlockHash(*block)
 
 	if CheckPreviousBlock(block.PreviousHash) {
 		fmt.Println("Block exists within the blockchain")
@@ -355,12 +343,13 @@ func (minerKey *MinerKey) ReceiveBlock(block Block, reply *string) error {
 		}
 	case 2:
 		if ComputeTrailingZeroes(hash, settings.PoWDifficultyOpBlock) {
-			ValidateOperation(block)
+			ValidateOperation(*block)
 		} else {
 			return errors.New("No-op block proof of work does not match the zeroes of nonce")
 		}
 	}
-	return errors.New("failed to validate block")
+	err := SendBlockInfo(block)
+	return err
 }
 
 // returns a boolean true if hash contains specified number of zeroes num at the end
