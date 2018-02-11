@@ -117,6 +117,19 @@ func validatedWithNetwork(block Block) bool {
 	return true
 }
 
+func GetInkAmount(prevBlock *Block) uint32 {
+	var totalInk uint32
+	temp := *prevBlock
+	for i := prevBlock.PathLength; i > 1; i-- {
+		if pubKey == temp.MinerPubKey {
+			totalInk = totalInk + temp.InkAmount
+			break
+		}
+		temp = *temp.PreviousBlock
+	}
+	return totalInk
+}
+
 func GenerateBlock(settings blockartlib.MinerNetSettings) {
 	for {
 		prevBlock := FindLastBlockOfLongestChain()
@@ -153,7 +166,7 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 				// validate secret with other miners?
 				if validatedWithNetwork(newBlock) {
 					prevBlock.IsEndBlock = false
-
+					newBlock.InkAmount = newBlock.InkAmount + GetInkAmount(prevBlock)
 					newBlock.PathLength = prevBlock.PathLength + 1
 					newBlock.PreviousBlock = prevBlock
 					newBlock.Hash = hash
@@ -454,7 +467,11 @@ func main() {
 
 	///////////////////////////////////////////////
 
-	//GenerateBlock(settings)
+	go GenerateBlock(settings)
+
+	time.Sleep(1 * time.Minute)
+
+	fmt.Println(blockList)
 
 	go InitHeartbeat(cli, pubKey, settings.HeartBeat)
 
