@@ -53,10 +53,6 @@ type Miner struct {
 	Cli     *rpc.Client
 }
 
-type ArtNodeInfo struct {
-	PubKey ecdsa.PublicKey
-}
-
 type Block struct {
 	PreviousBlock *Block
 	PreviousHash  string
@@ -79,6 +75,10 @@ type Operation struct {
 	OpType    string
 }
 
+type LongestBlockChain struct {
+	BlockChain []Block
+}
+
 // Keeps track of all the keys & Miner Address so miner can send it to other miners.
 // var privKey ecdsa.PrivateKey
 var pubKey ecdsa.PublicKey
@@ -89,7 +89,7 @@ var minerAddr net.Addr
 var connectedMiners = make(map[string]Miner)
 
 // Keeps track of all art nodes that are connected to this miner.
-var connectedArtNodeMap = make(map[string]ArtNodeInfo)
+// var connectedArtNodeMap = make(map[string]ArtNodeInfo)
 
 // Keeps track of all blocks generated
 var blockList = []Block{}
@@ -111,10 +111,90 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) 
 	return err
 }
 
+// Updates the longest block chain in the Miner Network.
+// If a miner receives this call, it will compare the length of blockchain received with their own longest blockchain:
+//		length of blockchain received > length of own longest blockchain -> replace own blockchain with longer and send that to neighbours
+//		length of blockchain received < length of own longest blockchain -> send own blockchain to neighbours
+//		length of blockchain received = length of own longest blockchain -> check if its exactly same as own blockchain
+// If length of blockchain received = length of own longest blockchain:
+// 		exactly the same blockchain -> do not send it to neighbours anymore
+//		not the same blockchain -> keep the blockchain
+func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain *LongestBlockChain, reply *string) error {
+	ownLongestBlockChain := FindLongestBlockChain()
+	var err error
+
+	// replace own blockList and send to neighbours
+	if len(longestBlockChain.BlockChain) > len(ownLongestBlockChain) {
+		blockList = longestBlockChain.BlockChain
+
+		for _, miner := range connectedMiners {
+			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain.BlockChain}, &reply)
+		}
+	} else if len(longestBlockChain.BlockChain) < len(ownLongestBlockChain) {
+
+		// send own longest blockchain to neighbours
+		for _, miner := range connectedMiners {
+			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: ownLongestBlockChain}, &reply)
+		}
+	} else {
+		// equal length, check whether blockchain are duplicates
+		isDuplicate := true
+
+		for i := 0; i < len(ownLongestBlockChain); i++ {
+			if ownLongestBlockChain[i].Hash != longestBlockChain.BlockChain[i].Hash {
+				isDuplicate = false
+				break
+			}
+		}
+		// not the same blockchain
+		if isDuplicate != true {
+
+		}
+		err = nil
+	}
+
+	return err
+}
+
+func (artkey *ArtKey) ValidateKey(artNodeKey *blockartlib.ArtNodeKey, canvasSettings *blockartlib.CanvasSettings) error {
+	fmt.Println(*artNodeKey.PubKey.X)
+	fmt.Println(*pubKey.X)
+	if artNodeKey.PubKey.X == pubKey.X {
+		fmt.Println("correct")
+		*canvasSettings = settings.CanvasSettings
+	}
+
+	return nil
+}
+
+func (artkey *ArtKey) GetInk(_ *struct{}, inkAmount *uint32) error {
+	for i := len(blockList) - 1; i >= 0; i-- {
+
+		if blockList[i].MinerPubKey == pubKey {
+			*inkAmount = blockList[i].InkAmount
+			break
+		}
+	}
+	return nil
+}
+
 // TODO
 func validatedWithNetwork(block Block) bool {
 	// TODO
 	return true
+}
+
+func GetInkAmount(prevBlock *Block) uint32 {
+	var totalInk uint32
+	temp := *prevBlock
+	for i := prevBlock.PathLength; i > 1; i-- {
+		if pubKey == temp.MinerPubKey {
+			totalInk = totalInk + temp.InkAmount
+			break
+		}
+		temp = *temp.PreviousBlock
+	}
+	return totalInk
 }
 
 func GenerateBlock(settings blockartlib.MinerNetSettings) {
@@ -153,7 +233,7 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 				// validate secret with other miners?
 				if validatedWithNetwork(newBlock) {
 					prevBlock.IsEndBlock = false
-
+					newBlock.InkAmount = newBlock.InkAmount + GetInkAmount(prevBlock)
 					newBlock.PathLength = prevBlock.PathLength + 1
 					newBlock.PreviousBlock = prevBlock
 					newBlock.Hash = hash
@@ -202,46 +282,32 @@ func FindBlockChainPath(block *Block) []Block {
 	return path
 }
 
-// TODO: INCOMPLETE?
-// placeholder for what this function must do
-func (minerKey *MinerKey) WriteBlock(block *Block, miner *Miner) error {
-
-	// minerIPPort := miner.minerAddr
-	// not sure how to connect to net.Addr type
-	// for each miner there is a minerAddr, connect to that and send the block
-
-	conn, err := net.Dial("udp", "127.0.0.0.1:80")
-	payload, err := json.Marshal(block)
-	conn.Write(payload)
-
-	defer conn.Close()
-
-	return err
-}
 
 // TODO: INCOMPLETE?
 // send out the block information to peers in the connected network of miners
 func SendBlockInfo(block *Block) error {
 
+	replyStr := ""
+
 	for key, miner := range connectedMiners {
 
-		err := miner.Cli.Call("MinerKey.WriteBlock", block, miner)
+		err := miner.Cli.Call("MinerKey.ReceiveBlock", block, replyStr)
 
 		if err != nil {
 			delete(connectedMiners, key)
 		}
 
-		// cannot connect to said miner then delete from connectedMiners
-
 	}
 	return errors.New("Parse error")
 }
 
+
+
 // once information about a block is received unpack that message and update ink-miner
-func (minerKey *MinerKey) ReceiveBlock(block Block, reply *string) error {
+func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 	blockType := block.SetOPs
 	var i int = 0
-	var hash string = ComputeBlockHash(block)
+	var hash string = ComputeBlockHash(*block)
 
 	if CheckPreviousBlock(block.PreviousHash) {
 		fmt.Println("Block exists within the blockchain")
@@ -263,12 +329,13 @@ func (minerKey *MinerKey) ReceiveBlock(block Block, reply *string) error {
 		}
 	case 2:
 		if ComputeTrailingZeroes(hash, settings.PoWDifficultyOpBlock) {
-			ValidateOperation(block)
+			ValidateOperation(*block)
 		} else {
 			return errors.New("No-op block proof of work does not match the zeroes of nonce")
 		}
 	}
-	return errors.New("failed to validate block")
+	err := SendBlockInfo(block)
+	return err
 }
 
 // returns a boolean true if hash contains specified number of zeroes num at the end
@@ -353,21 +420,40 @@ func InitHeartbeat(cli *rpc.Client, pubKey ecdsa.PublicKey, heartBeat uint32) {
 		var reply bool
 		err := cli.Call("RServer.HeartBeat", pubKey, &reply)
 		HandleError(err)
+
 		time.Sleep(time.Duration(int(heartBeat)/5) * time.Millisecond)
 	}
 }
 
 // Connect to the miners that the server has given.
+// Checks if the address already exists in ConnectedMiners map, it will skip connecting to them again.
 func ConnectToMiners(addrSet []net.Addr, currentAddress net.Addr, currentPubKey ecdsa.PublicKey) {
 	for i := 0; i < len(addrSet); i++ {
 
-		cli, err := rpc.Dial("tcp", addrSet[i].String())
+		if _, ok := connectedMiners[addrSet[i].String()]; !ok {
+			fmt.Println("hello")
+			cli, err := rpc.Dial("tcp", addrSet[i].String())
 
-		var reply MinerInfo
-		err = cli.Call("MinerKey.RegisterMiner", MinerInfo{Address: currentAddress, Key: currentPubKey}, &reply)
+			var reply MinerInfo
+			err = cli.Call("MinerKey.RegisterMiner", MinerInfo{Address: currentAddress, Key: currentPubKey}, &reply)
+			HandleError(err)
+
+			connectedMiners[reply.Address.String()] = Miner{Address: reply.Address, Key: reply.Key, Cli: cli}
+		}
+
+	}
+}
+
+// Goroutine to get nodes (if number of connected miners go below min-num-miner-connections, get more from server)
+func GetNodes(cli *rpc.Client) {
+	for {
+		var addrSet []net.Addr
+		err := cli.Call("RServer.GetNodes", pubKey, &addrSet)
 		HandleError(err)
 
-		connectedMiners[reply.Address.String()] = Miner{Address: reply.Address, Key: reply.Key, Cli: cli}
+		ConnectToMiners(addrSet, minerAddr, pubKey)
+
+		time.Sleep(30000 * time.Millisecond)
 	}
 }
 
@@ -386,6 +472,23 @@ func ComputeBlockHash(block Block) string {
 	h.Write([]byte(hash + string(minerPubKey) + strconv.Itoa(int(block.Nonce))))
 	str := hex.EncodeToString(h.Sum(nil))
 	return str
+}
+
+// Updates everyone's blockchain to only include the LONGEST blockchain
+func SyncMinersLongestChain() {
+	for {
+		if len(connectedMiners) > 0 {
+
+			longestBlockChain := FindLongestBlockChain()
+			var reply string
+
+			for _, miner := range connectedMiners {
+				miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain}, &reply)
+			}
+		}
+
+		time.Sleep(30 * time.Second)
+	}
 }
 
 func (artkey *ArtKey) GetChildren(blockHash string, children *[]string) error {
@@ -430,6 +533,8 @@ func main() {
 	lis, err := net.Listen("tcp", ":0")
 	minerAddr = lis.Addr()
 
+	fmt.Println(minerAddr)
+
 	cli, _ := rpc.Dial("tcp", serverAddr)
 
 	minerKey := new(MinerKey)
@@ -456,7 +561,7 @@ func main() {
 
 	///////////////////////////////////////////////
 
-	//GenerateBlock(settings)
+	fmt.Println(blockList)
 
 	go InitHeartbeat(cli, pubKey, settings.HeartBeat)
 
@@ -468,9 +573,9 @@ func main() {
 
 	ConnectToMiners(addrSet, minerAddr, pubKey)
 
-	for {
+	go GetNodes(cli)
 
-	}
+	GenerateBlock(settings)
 }
 
 func HandleError(err error) {
