@@ -280,46 +280,32 @@ func FindLongestBlockChain() []Block {
 	return longestChain
 }
 
-// TODO: INCOMPLETE?
-// placeholder for what this function must do
-func (minerKey *MinerKey) WriteBlock(block *Block, miner *Miner) error {
-
-	// minerIPPort := miner.minerAddr
-	// not sure how to connect to net.Addr type
-	// for each miner there is a minerAddr, connect to that and send the block
-
-	conn, err := net.Dial("udp", "127.0.0.0.1:80")
-	payload, err := json.Marshal(block)
-	conn.Write(payload)
-
-	defer conn.Close()
-
-	return err
-}
 
 // TODO: INCOMPLETE?
 // send out the block information to peers in the connected network of miners
 func SendBlockInfo(block *Block) error {
 
+	replyStr := ""
+
 	for key, miner := range connectedMiners {
 
-		err := miner.Cli.Call("MinerKey.WriteBlock", block, miner)
+		err := miner.Cli.Call("MinerKey.ReceiveBlock", block, replyStr)
 
 		if err != nil {
 			delete(connectedMiners, key)
 		}
 
-		// cannot connect to said miner then delete from connectedMiners
-
 	}
 	return errors.New("Parse error")
 }
 
+
+
 // once information about a block is received unpack that message and update ink-miner
-func (minerKey *MinerKey) ReceiveBlock(block Block, reply *string) error {
+func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 	blockType := block.SetOPs
 	var i int = 0
-	var hash string = ComputeBlockHash(block)
+	var hash string = ComputeBlockHash(*block)
 
 	if CheckPreviousBlock(block.PreviousHash) {
 		fmt.Println("Block exists within the blockchain")
@@ -341,12 +327,13 @@ func (minerKey *MinerKey) ReceiveBlock(block Block, reply *string) error {
 		}
 	case 2:
 		if ComputeTrailingZeroes(hash, settings.PoWDifficultyOpBlock) {
-			ValidateOperation(block)
+			ValidateOperation(*block)
 		} else {
 			return errors.New("No-op block proof of work does not match the zeroes of nonce")
 		}
 	}
-	return errors.New("failed to validate block")
+	err := SendBlockInfo(block)
+	return err
 }
 
 // returns a boolean true if hash contains specified number of zeroes num at the end
