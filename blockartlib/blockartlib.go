@@ -9,6 +9,7 @@ package blockartlib
 
 import "crypto/ecdsa"
 import "fmt"
+import "net/rpc"
 
 // Represents a type of shape in the BlockArt system.
 type ShapeType int
@@ -28,16 +29,11 @@ type CanvasSettings struct {
 	CanvasYMax uint32
 }
 
-
 // A MinerOnCanvas will have the information about miners on the canvas
 type MinerOnCanvas struct {
-	MinerAddress	string
-	PrivateKey		ecdsa.PrivateKey
-
+	MinerAddress string
+	PrivateKey   ecdsa.PrivateKey
 }
-
-
-
 
 // Settings for an instance of the BlockArt project/network.
 type MinerNetSettings struct {
@@ -204,52 +200,77 @@ type Canvas interface {
 // Can return the following errors:
 // - DisconnectedError
 func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, setting CanvasSettings, err error) {
-	
 
 	// provide canvas with a mineraddress and a privatekey
 	canvas = MinerOnCanvas{MinerAddress: minerAddr,
-							 PrivateKey: privKey}
-
-
+		PrivateKey: privKey}
 
 	// For now return DisconnectedError
 	return canvas, setting, err
 }
 
-
 ////////////////////////////////////////////
 // implementation of the MinerOnCanvas which is essenitially an art node connected to
 // a ink miner that will have all the functions from the interface blockartlob.go
 
-func (miner MinerOnCanvas) CloseCanvas() (inkRemaining uint32, err error){
+func (miner MinerOnCanvas) CloseCanvas() (inkRemaining uint32, err error) {
 	return inkRemaining, err
 }
 
 func (miner MinerOnCanvas) GetChildren(blockHash string) (blockHashes []string, err error) {
-	return blockHashes, err
+	// Retrieves the children blocks of the block identified by blockHash.
+	// Can return the following errors:
+	// - DisconnectedError
+	// - InvalidBlockHashError
+
+	address := miner.MinerAddress
+	cli, err := rpc.Dial("tcp", address)
+
+	var reply []string
+	err = cli.Call("ArtKey.GetChildren", blockHash, &reply)
+	if err != nil {
+		return nil, DisconnectedError(address)
+	}
+	if len(reply) > 0 && reply[0] == "INVALID" {
+		return nil, InvalidBlockHashError(blockHash)
+	}
+
+	return reply, nil
 }
 
-func (miner MinerOnCanvas) GetGenesisBlock() (blockHash string, err error){
-	return blockHash, err
+func (miner MinerOnCanvas) GetGenesisBlock() (blockHash string, err error) {
+	// Returns the block hash of the genesis block.
+	// Can return the following errors:
+	// - DisconnectedError
+
+	address := miner.MinerAddress
+	cli, err := rpc.Dial("tcp", address)
+
+	var reply string
+	err = cli.Call("ArtKey.GetGenesisBlock", "", &reply)
+	if err != nil {
+		return "", DisconnectedError(address)
+	}
+
+	return reply, nil
 }
 
-func (miner MinerOnCanvas) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error){
+func (miner MinerOnCanvas) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
 	return shapeHash, blockHash, inkRemaining, err
 }
 
-func (miner MinerOnCanvas) GetSvgString(shapeHash string) (svgString string, err error){
+func (miner MinerOnCanvas) GetSvgString(shapeHash string) (svgString string, err error) {
 	return svgString, err
 }
 
-func (miner MinerOnCanvas) GetInk() (inkRemaining uint32, err error){
+func (miner MinerOnCanvas) GetInk() (inkRemaining uint32, err error) {
 	return inkRemaining, err
 }
 
-func (miner MinerOnCanvas) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error){
+func (miner MinerOnCanvas) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
 	return inkRemaining, err
 }
 
-func (miner MinerOnCanvas) GetShapes(blockHash string) (shapeHashes []string, err error){
+func (miner MinerOnCanvas) GetShapes(blockHash string) (shapeHashes []string, err error) {
 	return shapeHashes, err
 }
-

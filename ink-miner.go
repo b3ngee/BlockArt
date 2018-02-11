@@ -16,11 +16,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/md5"
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"net"
@@ -35,6 +35,8 @@ import (
 var settings blockartlib.MinerNetSettings
 
 type MinerKey int
+
+type ArtKey int
 
 type MinerInfo struct {
 	Address net.Addr
@@ -73,9 +75,8 @@ type Operation struct {
 	ArtNodePubKey ecdsa.PublicKey
 
 	//Adding some new fields that could come in handy trying to validate
-	OpInkCost	  uint32
-	OpType string
-
+	OpInkCost uint32
+	OpType    string
 }
 
 // Keeps track of all the keys & Miner Address so miner can send it to other miners.
@@ -235,18 +236,16 @@ func SendBlockInfo(block *Block) error {
 }
 
 // once information about a block is received unpack that message and update ink-miner
-func (minerKey *MinerKey) ReceiveBlock(block Block,  reply *string) error {
+func (minerKey *MinerKey) ReceiveBlock(block Block, reply *string) error {
 	blockType := block.SetOPs
 	var i int = 0
 	var hash string = ComputeBlockHash(block)
 
-	
 	if CheckPreviousBlock(block.PreviousHash) {
 		fmt.Println("Block exists within the blockchain")
 	} else {
 		return errors.New("failed to validate hash of a previous block")
 	}
-
 
 	if len(blockType) == 0 {
 		i = 1
@@ -254,10 +253,9 @@ func (minerKey *MinerKey) ReceiveBlock(block Block,  reply *string) error {
 		i = 2
 	}
 
-
 	switch i {
 	case 1:
-		if ComputeTrailingZeroes(hash, settings.PoWDifficultyNoOpBlock)  {
+		if ComputeTrailingZeroes(hash, settings.PoWDifficultyNoOpBlock) {
 		} else {
 			return errors.New("No-op block proof of work does not match the zeroes of nonce")
 		}
@@ -271,10 +269,8 @@ func (minerKey *MinerKey) ReceiveBlock(block Block,  reply *string) error {
 	return errors.New("failed to validate block")
 }
 
-
-
 // returns a boolean true if hash contains specified number of zeroes num at the end
-func ComputeTrailingZeroes(hash string, num uint8) bool{
+func ComputeTrailingZeroes(hash string, num uint8) bool {
 	var i uint8 = 0
 	var numZeroesStr = ""
 	for i = 1; i < num; i++ {
@@ -289,7 +285,7 @@ func ComputeTrailingZeroes(hash string, num uint8) bool{
 }
 
 // checks that the previousHash in the block struct points to a previous generated block's Hash
-func CheckPreviousBlock(hash string) bool{
+func CheckPreviousBlock(hash string) bool {
 	for _, block := range blockList {
 		if block.Hash == hash {
 			return true
@@ -299,12 +295,10 @@ func CheckPreviousBlock(hash string) bool{
 	return false
 }
 
-
-
 // call this for op-blocks to validate the op-block
 func ValidateOperation(block Block) error {
 
-	// made a dummy private key but it should correspond to blockartlib shape added? 
+	// made a dummy private key but it should correspond to blockartlib shape added?
 	// need clarification from you guys
 	// Check that each operation in the block has a valid signature
 	privateKeyBytesRestored, _ := hex.DecodeString("yoloswag")
@@ -313,14 +307,14 @@ func ValidateOperation(block Block) error {
 	r, s, err := ecdsa.Sign(rand.Reader, privKey, []byte(block.Hash))
 	HandleError(err)
 
-	if ecdsa.Verify(&block.MinerPubKey, []byte(block.Hash), r, s){
+	if ecdsa.Verify(&block.MinerPubKey, []byte(block.Hash), r, s) {
 		fmt.Println("op-sig is valid .... continuing validation")
 	} else {
 		return errors.New("failed to validate operation signature")
 	}
 
 	// Check that each operation has sufficient ink associated with the public key that generated the operation.
-	for _, operation := range block.SetOPs{
+	for _, operation := range block.SetOPs {
 		totalInk := block.InkAmount
 		currentOpCost := operation.OpInkCost
 
@@ -331,20 +325,19 @@ func ValidateOperation(block Block) error {
 			return errors.New("not enough ink to perform operation")
 		}
 
-		if operation.OpType == "Delete"{
+		if operation.OpType == "Delete" {
 			// TODO: make sure that delete operation deletes a shape that exists, how are we keeping track
 			// of the shapes?
 		}
 
 		// Check that the operation with an identical signature has not been previously added to the blockchain
 		for _, finishedop := range operations {
-			if finishedop.OPSignature == operation.OPSignature{
+			if finishedop.OPSignature == operation.OPSignature {
 				return errors.New("operation with same signature exists")
 			}
 			continue
 		}
 	}
-
 
 	return errors.New("failed to validate block")
 
@@ -393,6 +386,34 @@ func ComputeBlockHash(block Block) string {
 	return str
 }
 
+func (artkey *ArtKey) GetChildren(blockHash string, children *[]string) error {
+	hashExists := false
+	result := []string{}
+
+	for _, block := range blockList {
+
+		if block.Hash == blockHash {
+			hashExists = true
+		}
+		if block.PreviousHash == blockHash {
+			result = append(result, block.Hash)
+		}
+	}
+
+	if !hashExists {
+		result = append(result, "INVALID")
+	}
+
+	*children = result
+
+	return nil
+}
+
+func (artkey *ArtKey) GetGenesisBlock(doNotUse string, genesisHash *string) error {
+	*genesisHash = blockList[0].Hash
+	return nil
+}
+
 func main() {
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
@@ -430,7 +451,7 @@ func main() {
 	// previousTestBlock := Block{PreviousHash: "345", Hash: "1234"}
 	// blocktocheck := Block{PreviousBlock: &previousTestBlock, PreviousHash: "1234", Hash: "yee",
 	// SetOPs: operationsCheck, MinerPubKey: pubKey, Nonce: 5, InkAmount: 6}
-	
+
 	///////////////////////////////////////////////
 
 	//GenerateBlock(settings)
