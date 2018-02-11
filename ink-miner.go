@@ -49,10 +49,6 @@ type Miner struct {
 	Cli     *rpc.Client
 }
 
-type ArtNodeInfo struct {
-	PubKey ecdsa.PublicKey
-}
-
 type Block struct {
 	PreviousBlock *Block
 	PreviousHash  string
@@ -71,6 +67,10 @@ type Operation struct {
 	ArtNodePubKey ecdsa.PublicKey
 }
 
+type LongestBlockChain struct {
+	BlockChain []Block
+}
+
 // Keeps track of all the keys & Miner Address so miner can send it to other miners.
 // var privKey ecdsa.PrivateKey
 var pubKey ecdsa.PublicKey
@@ -81,7 +81,7 @@ var minerAddr net.Addr
 var connectedMiners = make(map[string]Miner)
 
 // Keeps track of all art nodes that are connected to this miner.
-var connectedArtNodeMap = make(map[string]ArtNodeInfo)
+// var connectedArtNodeMap = make(map[string]ArtNodeInfo)
 
 // Keeps track of all blocks generated
 var blockList = []Block{}
@@ -101,6 +101,73 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) 
 	*reply = MinerInfo{Address: minerAddr, Key: pubKey}
 
 	return err
+}
+
+// Updates the longest block chain in the Miner Network.
+// If a miner receives this call, it will compare the length of blockchain received with their own longest blockchain:
+//		length of blockchain received > length of own longest blockchain -> replace own blockchain with longer and send that to neighbours
+//		length of blockchain received < length of own longest blockchain -> send own blockchain to neighbours
+//		length of blockchain received = length of own longest blockchain -> check if its exactly same as own blockchain
+// If length of blockchain received = length of own longest blockchain:
+// 		exactly the same blockchain -> do not send it to neighbours anymore
+//		not the same blockchain -> keep the blockchain
+func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain *LongestBlockChain, reply *string) error {
+	ownLongestBlockChain := FindLongestBlockChain()
+	var err error
+
+	// replace own blockList and send to neighbours
+	if len(longestBlockChain.BlockChain) > len(ownLongestBlockChain) {
+		blockList = longestBlockChain.BlockChain
+
+		for _, miner := range connectedMiners {
+			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain.BlockChain}, &reply)
+		}
+	} else if len(longestBlockChain.BlockChain) < len(ownLongestBlockChain) {
+
+		// send own longest blockchain to neighbours
+		for _, miner := range connectedMiners {
+			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: ownLongestBlockChain}, &reply)
+		}
+	} else {
+		// equal length, check whether blockchain are duplicates
+		isDuplicate := true
+
+		for i := 0; i < len(ownLongestBlockChain); i++ {
+			if ownLongestBlockChain[i].Hash != longestBlockChain.BlockChain[i].Hash {
+				isDuplicate = false
+				break
+			}
+		}
+		// not the same blockchain
+		if isDuplicate != true {
+
+		}
+		err = nil
+	}
+
+	return err
+}
+
+func (minerKey *MinerKey) ValidateKey(artNodeKey *blockartlib.ArtNodeKey, canvasSettings *blockartlib.CanvasSettings) error {
+	fmt.Println(*artNodeKey.PubKey.X)
+	fmt.Println(*pubKey.X)
+	if artNodeKey.PubKey.X == pubKey.X {
+		fmt.Println("correct")
+		*canvasSettings = settings.CanvasSettings
+	}
+
+	return nil
+}
+
+func (minerKey *MinerKey) GetInkAmount(_ *struct{}, inkAmount *uint32) error {
+	for i := len(blockList) - 1; i >= 0; i-- {
+
+		if blockList[i].MinerPubKey == pubKey {
+			*inkAmount = blockList[i].InkAmount
+			break
+		}
+	}
+	return nil
 }
 
 // TODO
@@ -296,21 +363,40 @@ func InitHeartbeat(cli *rpc.Client, pubKey ecdsa.PublicKey, heartBeat uint32) {
 		var reply bool
 		err := cli.Call("RServer.HeartBeat", pubKey, &reply)
 		HandleError(err)
+
 		time.Sleep(time.Duration(int(heartBeat)/5) * time.Millisecond)
 	}
 }
 
 // Connect to the miners that the server has given.
+// Checks if the address already exists in ConnectedMiners map, it will skip connecting to them again.
 func ConnectToMiners(addrSet []net.Addr, currentAddress net.Addr, currentPubKey ecdsa.PublicKey) {
 	for i := 0; i < len(addrSet); i++ {
 
-		cli, err := rpc.Dial("tcp", addrSet[i].String())
+		if _, ok := connectedMiners[addrSet[i].String()]; !ok {
+			fmt.Println("hello")
+			cli, err := rpc.Dial("tcp", addrSet[i].String())
 
-		var reply MinerInfo
-		err = cli.Call("MinerKey.RegisterMiner", MinerInfo{Address: currentAddress, Key: currentPubKey}, &reply)
+			var reply MinerInfo
+			err = cli.Call("MinerKey.RegisterMiner", MinerInfo{Address: currentAddress, Key: currentPubKey}, &reply)
+			HandleError(err)
+
+			connectedMiners[reply.Address.String()] = Miner{Address: reply.Address, Key: reply.Key, Cli: cli}
+		}
+
+	}
+}
+
+// Goroutine to get nodes (if number of connected miners go below min-num-miner-connections, get more from server)
+func GetNodes(cli *rpc.Client) {
+	for {
+		var addrSet []net.Addr
+		err := cli.Call("RServer.GetNodes", pubKey, &addrSet)
 		HandleError(err)
 
-		connectedMiners[reply.Address.String()] = Miner{Address: reply.Address, Key: reply.Key, Cli: cli}
+		ConnectToMiners(addrSet, minerAddr, pubKey)
+
+		time.Sleep(30000 * time.Millisecond)
 	}
 }
 
@@ -331,6 +417,23 @@ func ComputeBlockHash(block Block) string {
 	return str
 }
 
+// Updates everyone's blockchain to only include the LONGEST blockchain
+func SyncMinersLongestChain() {
+	for {
+		if len(connectedMiners) > 0 {
+
+			longestBlockChain := FindLongestBlockChain()
+			var reply string
+
+			for _, miner := range connectedMiners {
+				miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain}, &reply)
+			}
+		}
+
+		time.Sleep(30 * time.Second)
+	}
+}
+
 func main() {
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
@@ -344,6 +447,8 @@ func main() {
 
 	lis, err := net.Listen("tcp", ":0")
 	minerAddr = lis.Addr()
+
+	fmt.Println(minerAddr)
 
 	cli, _ := rpc.Dial("tcp", serverAddr)
 
@@ -381,6 +486,8 @@ func main() {
 	HandleError(err)
 
 	ConnectToMiners(addrSet, minerAddr, pubKey)
+
+	go GetNodes(cli)
 
 	for {
 

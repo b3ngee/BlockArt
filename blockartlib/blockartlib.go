@@ -7,8 +7,14 @@ library (blockartlib) to be used in project 1 of UBC CS 416 2017W2.
 
 package blockartlib
 
-import "crypto/ecdsa"
-import "fmt"
+import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"encoding/gob"
+	"fmt"
+	"net"
+	"net/rpc"
+)
 
 // Represents a type of shape in the BlockArt system.
 type ShapeType int
@@ -28,16 +34,15 @@ type CanvasSettings struct {
 	CanvasYMax uint32
 }
 
-
-// A MinerOnCanvas will have the information about miners on the canvas
-type MinerOnCanvas struct {
-	MinerAddress	string
-	PrivateKey		ecdsa.PrivateKey
-
+// A CanvasObj will have the information about miners on the canvas
+type CanvasObj struct {
+	MinerAddress string
+	PrivateKey   ecdsa.PrivateKey
 }
 
-
-
+type ArtNodeKey struct {
+	PubKey ecdsa.PublicKey
+}
 
 // Settings for an instance of the BlockArt project/network.
 type MinerNetSettings struct {
@@ -139,6 +144,13 @@ func (e InvalidBlockHashError) Error() string {
 	return fmt.Sprintf("BlockArt: Invalid block hash [%s]", string(e))
 }
 
+// SELF MADE: Contains Private/Public Key that is not validated by the Miner.
+type InvalidKeyError string
+
+func (e InvalidKeyError) Error() string {
+	return fmt.Sprintf("BlockArt: Public Key is not validated [%s]", string(e))
+}
+
 // </ERROR DEFINITIONS>
 ////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -204,52 +216,64 @@ type Canvas interface {
 // Can return the following errors:
 // - DisconnectedError
 func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, setting CanvasSettings, err error) {
-	
+	gob.Register(&net.TCPAddr{})
+	gob.Register(&elliptic.CurveParams{})
+
+	pubKey := privKey.PublicKey
+
+	cli, err := rpc.Dial("tcp", minerAddr)
+
+	if err != nil {
+		return nil, setting, DisconnectedError(minerAddr)
+	}
+
+	err = cli.Call("MinerKey.ValidateKey", ArtNodeKey{PubKey: pubKey}, &setting)
+	if err != nil {
+		return nil, setting, DisconnectedError(minerAddr)
+	}
+	fmt.Println(setting)
 
 	// provide canvas with a mineraddress and a privatekey
-	canvas = MinerOnCanvas{MinerAddress: minerAddr,
-							 PrivateKey: privKey}
-
-
+	canvasObj := CanvasObj{
+		MinerAddress: minerAddr,
+		PrivateKey:   privKey}
 
 	// For now return DisconnectedError
-	return canvas, setting, err
+	return canvasObj, setting, err
 }
 
-
-////////////////////////////////////////////
-// implementation of the MinerOnCanvas which is essenitially an art node connected to
-// a ink miner that will have all the functions from the interface blockartlob.go
-
-func (miner MinerOnCanvas) CloseCanvas() (inkRemaining uint32, err error){
+func (canvasObj CanvasObj) CloseCanvas() (inkRemaining uint32, err error) {
 	return inkRemaining, err
 }
 
-func (miner MinerOnCanvas) GetChildren(blockHash string) (blockHashes []string, err error) {
+func (canvasObj CanvasObj) GetChildren(blockHash string) (blockHashes []string, err error) {
 	return blockHashes, err
 }
 
-func (miner MinerOnCanvas) GetGenesisBlock() (blockHash string, err error){
+func (canvasObj CanvasObj) GetGenesisBlock() (blockHash string, err error) {
 	return blockHash, err
 }
 
-func (miner MinerOnCanvas) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error){
+func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
 	return shapeHash, blockHash, inkRemaining, err
 }
 
-func (miner MinerOnCanvas) GetSvgString(shapeHash string) (svgString string, err error){
+func (canvasObj CanvasObj) GetSvgString(shapeHash string) (svgString string, err error) {
 	return svgString, err
 }
 
-func (miner MinerOnCanvas) GetInk() (inkRemaining uint32, err error){
+// Returns the amount of ink currently available.
+// Can return the following errors:
+// - DisconnectedError
+func (canvasObj CanvasObj) GetInk() (inkRemaining uint32, err error) {
+
 	return inkRemaining, err
 }
 
-func (miner MinerOnCanvas) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error){
+func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
 	return inkRemaining, err
 }
 
-func (miner MinerOnCanvas) GetShapes(blockHash string) (shapeHashes []string, err error){
+func (canvasObj CanvasObj) GetShapes(blockHash string) (shapeHashes []string, err error) {
 	return shapeHashes, err
 }
-
