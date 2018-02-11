@@ -170,34 +170,36 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 	}
 }
 
-func FindLastBlockOfLongestChain() *Block {
-	var tempMaxLength int
-	var lastBlock *Block
+func FindLastBlockOfLongestChain() []*Block {
+	tempMaxLength := -1
+	lastBlocks := []*Block{}
 
 	for i := len(blockList) - 1; i >= 0; i-- {
 		currBlock := blockList[i]
 
-		if currBlock.IsEndBlock && currBlock.PathLength > tempMaxLength {
-			lastBlock = &blockList[i]
-			tempMaxLength = currBlock.PathLength
+		if currBlock.IsEndBlock && currBlock.PathLength >= tempMaxLength {
+			if currBlock.PathLength > tempMaxLength {
+				lastBlocks = []*Block{}
+				tempMaxLength = currBlock.PathLength
+			}
+			lastBlocks = append(lastBlocks, &blockList[i])
 		}
 	}
 
-	return lastBlock
+	return lastBlocks
 }
 
-func FindLongestBlockChain() []Block {
-	block := FindLastBlockOfLongestChain()
+func FindBlockChainPath(block *Block) []Block {
 	tempBlock := *block
-	longestChain := []Block{}
+	path := []Block{}
 
 	for i := block.PathLength; i > 1; i-- {
-		longestChain = append(longestChain, tempBlock)
+		path = append(path, tempBlock)
 		tempBlock = *tempBlock.PreviousBlock
 	}
 
-	longestChain = append(longestChain, tempBlock)
-	return longestChain
+	path = append(path, tempBlock)
+	return path
 }
 
 // TODO: INCOMPLETE?
