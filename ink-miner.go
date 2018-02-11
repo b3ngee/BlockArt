@@ -31,6 +31,7 @@ import (
 	"time"
 	//"math/big"
 )
+import mrand "math/rand"
 
 var settings blockartlib.MinerNetSettings
 
@@ -120,6 +121,8 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) 
 // 		exactly the same blockchain -> do not send it to neighbours anymore
 //		not the same blockchain -> keep the blockchain
 func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain *LongestBlockChain, reply *string) error {
+	mrand.Seed(time.Now().UnixNano())
+
 	ownLongestBlockChain := FindLongestBlockChain()
 	var err error
 
@@ -137,6 +140,7 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain *LongestBloc
 			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: ownLongestBlockChain}, &reply)
 		}
 	} else {
+
 		// equal length, check whether blockchain are duplicates
 		isDuplicate := true
 
@@ -149,18 +153,28 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain *LongestBloc
 		// not the same blockchain
 		if isDuplicate != true {
 
+			// if rand = 1, use the longest blockchain received and update the neighbours. Otherwise, keep own longest blockchain.
+			if mrand.Intn(2-1)+1 == 1 {
+				blockList = longestBlockChain.BlockChain
+				for _, miner := range connectedMiners {
+					err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain.BlockChain}, &reply)
+				}
+			} else {
+				for _, miner := range connectedMiners {
+					err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: ownLongestBlockChain}, &reply)
+				}
+			}
+		} else {
+			err = nil
 		}
-		err = nil
 	}
 
 	return err
 }
 
 func (artkey *ArtKey) ValidateKey(artNodeKey *blockartlib.ArtNodeKey, canvasSettings *blockartlib.CanvasSettings) error {
-	fmt.Println(*artNodeKey.PubKey.X)
-	fmt.Println(*pubKey.X)
-	if artNodeKey.PubKey.X == pubKey.X {
-		fmt.Println("correct")
+
+	if ecdsa.Verify(&pubKey, artNodeKey.Hash, artNodeKey.R, artNodeKey.S) == true {
 		*canvasSettings = settings.CanvasSettings
 	}
 
@@ -491,6 +505,7 @@ func SyncMinersLongestChain() {
 		if len(connectedMiners) > 0 {
 
 			longestBlockChain := FindLongestBlockChain()
+			blockList = longestBlockChain
 			var reply string
 
 			for _, miner := range connectedMiners {
@@ -550,6 +565,9 @@ func main() {
 
 	minerKey := new(MinerKey)
 	rpc.Register(minerKey)
+
+	artKey := new(ArtKey)
+	rpc.Register(artKey)
 
 	err = cli.Call("RServer.Register", MinerInfo{Address: minerAddr, Key: pubKey}, &settings)
 	HandleError(err)

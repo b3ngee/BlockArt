@@ -10,8 +10,10 @@ package blockartlib
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/gob"
 	"fmt"
+	"math/big"
 	"net"
 	"net/rpc"
 )
@@ -38,10 +40,12 @@ type CanvasSettings struct {
 type CanvasObj struct {
 	MinerAddress string
 	PrivateKey   ecdsa.PrivateKey
+	MinerCli     *rpc.Client
 }
 
 type ArtNodeKey struct {
-	PubKey ecdsa.PublicKey
+	R, S *big.Int
+	Hash []byte
 }
 
 // Settings for an instance of the BlockArt project/network.
@@ -148,7 +152,7 @@ func (e InvalidBlockHashError) Error() string {
 type InvalidKeyError string
 
 func (e InvalidKeyError) Error() string {
-	return fmt.Sprintf("BlockArt: Public Key is not validated [%s]", string(e))
+	return fmt.Sprintf("BlockArt: Public Key is not validated", string(e))
 }
 
 // </ERROR DEFINITIONS>
@@ -219,7 +223,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
 
-	pubKey := privKey.PublicKey
+	// pubKey := privKey.PublicKey
 
 	cli, err := rpc.Dial("tcp", minerAddr)
 
@@ -227,16 +231,18 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 		return nil, setting, DisconnectedError(minerAddr)
 	}
 
-	err = cli.Call("ArtKey.ValidateKey", ArtNodeKey{PubKey: pubKey}, &setting)
+	r, s, _ := ecdsa.Sign(rand.Reader, &privKey, []byte("This is the Private Key."))
+
+	err = cli.Call("ArtKey.ValidateKey", ArtNodeKey{R: r, S: s, Hash: []byte("This is the Private Key.")}, &setting)
 	if err != nil {
 		return nil, setting, DisconnectedError(minerAddr)
 	}
-	fmt.Println(setting)
 
 	// provide canvas with a mineraddress and a privatekey
 	canvasObj := CanvasObj{
 		MinerAddress: minerAddr,
-		PrivateKey:   privKey}
+		PrivateKey:   privKey,
+		MinerCli:     cli}
 
 	// For now return DisconnectedError
 	return canvasObj, setting, err
@@ -247,7 +253,23 @@ func (canvasObj CanvasObj) CloseCanvas() (inkRemaining uint32, err error) {
 }
 
 func (canvasObj CanvasObj) GetChildren(blockHash string) (blockHashes []string, err error) {
-	return blockHashes, err
+	// Retrieves the children blocks of the block identified by blockHash.
+	// Can return the following errors:
+	// - DisconnectedError
+	// - InvalidBlockHashError
+
+	address := canvasObj.MinerAddress
+
+	var reply []string
+	err = canvasObj.MinerCli.Call("ArtKey.GetChildren", blockHash, &reply)
+	if err != nil {
+		return nil, DisconnectedError(address)
+	}
+	if len(reply) > 0 && reply[0] == "INVALID" {
+		return nil, InvalidBlockHashError(blockHash)
+	}
+
+	return reply, nil
 }
 
 func (canvasObj CanvasObj) GetGenesisBlock() (blockHash string, err error) {
@@ -256,10 +278,9 @@ func (canvasObj CanvasObj) GetGenesisBlock() (blockHash string, err error) {
 	// - DisconnectedError
 
 	address := canvasObj.MinerAddress
-	cli, err := rpc.Dial("tcp", address)
 
 	var reply string
-	err = cli.Call("ArtKey.GetGenesisBlock", "", &reply)
+	err = canvasObj.MinerCli.Call("ArtKey.GetGenesisBlock", "", &reply)
 	if err != nil {
 		return "", DisconnectedError(address)
 	}
