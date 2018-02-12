@@ -13,9 +13,12 @@ import (
 	"crypto/rand"
 	"encoding/gob"
 	"fmt"
+	"math"
 	"math/big"
 	"net"
 	"net/rpc"
+	"strings"
+	"strconv"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -28,6 +31,8 @@ const (
 	// Circle shape (extra credit).
 	// CIRCLE
 )
+
+var canvasSettings CanvasSettings
 
 // Settings for a canvas in BlockArt.
 type CanvasSettings struct {
@@ -288,15 +293,24 @@ func (canvasObj CanvasObj) GetGenesisBlock() (blockHash string, err error) {
 	return reply, nil
 }
 
-
 func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
 	// Adds a new shape to the canvas.
 	// Can return the following errors:
 	// - DisconnectedError
 	// - InsufficientInkError
 	// - InvalidShapeSvgStringError
+
+
 	// - ShapeSvgStringTooLongError
+	if !HandleSvgStringLength(shapeSvgString){
+		return "", "", inkRemaining, ShapeSvgStringTooLongError(shapeSvgString)
+	}
+
+
 	// - ShapeOverlapError
+
+
+
 	// - OutOfBoundsError
 	svgArray := strings.SplitAfter(shapeSvgString,"")
 
@@ -313,6 +327,39 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 
 	return shapeHash, blockHash, inkRemaining, err
+}
+
+
+func (canvasObj CanvasObj) GetSvgString(shapeHash string) (svgString string, err error) {
+	return svgString, err
+}
+
+// Returns the amount of ink currently available.
+// Can return the following errors:
+// - DisconnectedError
+func (canvasObj CanvasObj) GetInk() (inkRemaining uint32, err error) {
+
+	return inkRemaining, err
+}
+
+func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
+	return inkRemaining, err
+}
+
+func (canvasObj CanvasObj) GetShapes(blockHash string) (shapeHashes []string, err error) {
+	return shapeHashes, err
+}
+
+
+///////////////////////////////// HELPER FUNCTIONS BELOW
+
+
+// svg string can be at most 128 characters in string length
+func HandleSvgStringLength(svgstr string)bool{
+	if len(svgstr) > 128{
+		return false
+	}
+	return true
 }
 
 func CalcInkUsed(svgArray []string) int64 {
@@ -436,22 +483,9 @@ func BoundCheck(svgArray []string) bool {
     return true
 }
 
-func (canvasObj CanvasObj) GetSvgString(shapeHash string) (svgString string, err error) {
-	return svgString, err
-}
 
-// Returns the amount of ink currently available.
-// Can return the following errors:
-// - DisconnectedError
-func (canvasObj CanvasObj) GetInk() (inkRemaining uint32, err error) {
-
-	return inkRemaining, err
-}
-
-func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
-	return inkRemaining, err
-}
-
-func (canvasObj CanvasObj) GetShapes(blockHash string) (shapeHashes []string, err error) {
-	return shapeHashes, err
+func HandleError(err error) {
+	if err != nil {
+		fmt.Println(err)
+	}
 }
