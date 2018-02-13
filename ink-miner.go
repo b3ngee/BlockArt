@@ -478,50 +478,64 @@ func CheckPreviousBlock(hash string) (*Block, bool) {
 }
 
 // call this for op-blocks to validate the op-block
-func ValidateOperation(block Block) error {
+func ValidateOperation(operations []Operation) error {
 
 	// made a dummy private key but it should correspond to blockartlib shape added?
 	// need clarification from you guys
 	// Check that each operation in the block has a valid signature
-	privateKeyBytesRestored, _ := hex.DecodeString("yoloswag")
-	privKey, _ := x509.ParseECPrivateKey(privateKeyBytesRestored)
 
-	r, s, err := ecdsa.Sign(rand.Reader, privKey, []byte(block.Hash))
-	HandleError(err)
+	var artNodePK ecdsa.PublicKey
+	var totalOpCost uint32
 
-	if ecdsa.Verify(&block.MinerPubKey, []byte(block.Hash), r, s) {
-		fmt.Println("op-sig is valid .... continuing validation")
-	} else {
-		return errors.New("failed to validate operation signature")
-	}
-
-	// Check that each operation has sufficient ink associated with the public key that generated the operation.
-	for _, operation := range block.SetOPs {
-		totalInk := block.TotalInkAmount
-		currentOpCost := operation.OpInkCost
-
-		if totalInk >= currentOpCost {
-			totalInk = totalInk - currentOpCost
-			continue
+	// checking the signature private key public key matching
+	for _,operation := range operations{
+		if ecdsa.Verify(&block.MinerPubKey, []byte(GlobalHash), operation.OPSigR, operation.OPSigS) {
+			fmt.Println("op-sig is valid .... continuing validation")
 		} else {
-			return errors.New("not enough ink to perform operation")
+			return errors.New("failed to validate operation signature")
 		}
+		artNodePK = operation.ArtNodePubKey
+		totalOpCost = operation.OpInkCost
 
-		if operation.OpType == "Delete" {
-			// TODO: make sure that delete operation deletes a shape that exists, how are we keeping track
-			// of the shapes?
-		}
-
-		// Check that the operation with an identical signature has not been previously added to the blockchain
-		for _, finishedop := range operations {
-			if finishedop.OPSignature == operation.OPSignature {
-				return errors.New("operation with same signature exists")
+		if operation.OpType == "Delete"{
+			for _, doneOp := range operationsHistory {
+				if operation.OPSignature == doneOp {
+					fmt.Println("Delete operation validation sucess, shape to be deleted exists")
+				} else {
+					return errors.New("Delete operation could not find a shape previously added")
+				}
 			}
-			continue
+		}
+
+		if operation.OpType == "Add"{
+			for _, doneOp := range operationsHistory {
+				if operation.OPSignature == doneOp {
+					return errors.New("Duplicate add operation of same shape")
+				} else {
+					fmt.Println("identical signature could not be found, add shape validation sucess")
+				}
+			}
 		}
 	}
 
-	return errors.New("failed to validate block")
+	// checking ink amount
+	for _,block := range blockList{
+		if block.MinerPubKey == artNodePK {
+			minerCurrentInk := GetInkAmount(block)
+			minerCurrentInk = minerCurrentInk - totalOpCost
+			if minerCurrentInk < 0 {
+				return errors.New("the total operation cost exceeds ink-miner supply")
+			} else {
+				continue
+			}
+		} else {
+			return errors.New("ArtNodePubKey's associated MinerPubKey could not be found")
+		}
+	}
+
+
+
+	return errors.New("failed to validate operation")
 
 }
 
