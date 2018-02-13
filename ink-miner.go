@@ -55,15 +55,16 @@ type Miner struct {
 }
 
 type Block struct {
-	PreviousBlock *Block
-	PreviousHash  string
-	Hash          string
-	SetOPs        []Operation
-	MinerPubKey   ecdsa.PublicKey
-	Nonce         uint32
-	InkAmount     uint32
-	PathLength    int
-	IsEndBlock    bool
+	PreviousBlock  *Block
+	PreviousHash   string
+	Hash           string
+	SetOPs         []Operation
+	MinerPubKey    ecdsa.PublicKey
+	Nonce          uint32
+	TotalInkAmount uint32 // Total = Bank - Opcost (+ Reward when you mine the block)
+	InkBank        uint32 // Bank  = Previous block total (with same pubkey as yourself)
+	PathLength     int
+	IsEndBlock     bool
 }
 
 type Operation struct {
@@ -185,7 +186,7 @@ func (artkey *ArtKey) GetInk(_ *struct{}, inkAmount *uint32) error {
 	for i := len(blockList) - 1; i >= 0; i-- {
 
 		if blockList[i].MinerPubKey == pubKey {
-			*inkAmount = blockList[i].InkAmount
+			*inkAmount = blockList[i].TotalInkAmount
 			break
 		}
 	}
@@ -199,26 +200,24 @@ func validatedWithNetwork(block Block) bool {
 }
 
 func GetInkAmount(prevBlock *Block) uint32 {
-	var totalInk uint32
 	temp := *prevBlock
 	for i := prevBlock.PathLength; i > 1; i-- {
-		if pubKey == temp.MinerPubKey {
-			totalInk = totalInk + temp.InkAmount
+		if pubKey == temp.MinerPubKey { // TODO: change pubkey comparisons
+			return temp.TotalInkAmount
 			break
 		}
 		temp = *temp.PreviousBlock
 	}
-	return totalInk
+	return 0
 }
 
 func GenerateBlock(settings blockartlib.MinerNetSettings) {
 	for {
-		prevBlock := FindLastBlockOfLongestChain()
-		prevBlockHash := ComputeBlockHash(*prevBlock)
-
-		var newBlock Block
 		var difficulty int
 		var isNoOp bool
+		var prevBlock *Block
+
+		newBlock := Block{Nonce: 0, MinerPubKey: pubKey}
 
 		if len(operations) > 0 {
 			isNoOp = false
@@ -226,15 +225,28 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 			copy(copyOfOps, operations)
 			operations = operations[:0]
 
-			newBlock = Block{PreviousHash: prevBlockHash, SetOPs: copyOfOps, Nonce: 0, MinerPubKey: pubKey, InkAmount: settings.InkPerOpBlock}
+			newBlock.SetOPs = copyOfOps
 			difficulty = int(settings.PoWDifficultyOpBlock)
 		} else {
 			isNoOp = true
-			newBlock = Block{PreviousHash: prevBlockHash, Nonce: 0, MinerPubKey: pubKey, InkAmount: settings.InkPerNoOpBlock}
 			difficulty = int(settings.PoWDifficultyNoOpBlock)
 		}
 
 		zeroString := strings.Repeat("0", difficulty)
+
+		endBlocks := FindLastBlockOfLongestChain()
+
+		if len(endBlocks) > 1 {
+			if !isNoop {
+				prevBlock = SelectValidBranch(endBlocks, newBlock)
+			} else {
+				prevBlock = SelectRandomBranch(endBlocks)
+			}
+		} else {
+			prevBlock = *endBlocks[0]
+		}
+
+		prevBlockHash := ComputeBlockHash(*prevBlock)
 
 		for {
 			if isNoOp && len(operations) > 0 {
@@ -244,19 +256,11 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 			hash := ComputeBlockHash(newBlock)
 			subString := hash[len(hash)-difficulty:]
 			if zeroString == subString {
-				// validate secret with other miners?
-				if validatedWithNetwork(newBlock) {
-					prevBlock.IsEndBlock = false
-					newBlock.InkAmount = newBlock.InkAmount + GetInkAmount(prevBlock)
-					newBlock.PathLength = prevBlock.PathLength + 1
-					newBlock.PreviousBlock = prevBlock
-					newBlock.Hash = hash
-					newBlock.IsEndBlock = true
+				newBlock.Hash = hash
+				newBlock.PreviousHash = prevBlockHash
+				newBlock.IsEndBlock = true
 
-					blockList = append(blockList, newBlock)
-
-					SendBlockInfo(&newBlock)
-				}
+				SendBlockInfo(&newBlock)
 				break
 			}
 			newBlock.Nonce = newBlock.Nonce + 1
@@ -296,7 +300,6 @@ func FindBlockChainPath(block *Block) []Block {
 	return path
 }
 
-
 // TODO: INCOMPLETE?
 // send out the block information to peers in the connected network of miners
 func SendBlockInfo(block *Block) error {
@@ -315,21 +318,32 @@ func SendBlockInfo(block *Block) error {
 	return errors.New("Parse error")
 }
 
-
-
 // once information about a block is received unpack that message and update ink-miner
 func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
-	blockType := block.SetOPs
-	var i int = 0
-	var hash string = ComputeBlockHash(*block)
+	receivedBlock := *block
+	hash := receivedBlock.Hash
+	previousHash := receivedBlock.PreviousHash
+	operations := receivedBlock.SetOPs
 
-	if CheckPreviousBlock(block.PreviousHash) {
+	// Already exists in local blockchain, do nothing
+	if ExistInLocalBlockchain(hash) {
+		return nil
+	}
+
+	// Check if previous hash is a block that exists in the block chain
+	var previousBlock *Block
+	if prevBlock, exists := CheckPreviousBlock(previousHash); exists {
+		previousBlock = prevBlock
 		fmt.Println("Block exists within the blockchain")
 	} else {
 		return errors.New("failed to validate hash of a previous block")
 	}
 
-	if len(blockType) == 0 {
+	// Check if received block is a No-Op or Op block based on length of operations
+	// 1 = No-Op
+	// 2 = Op
+	var i int = 0
+	if len(operations) == 0 {
 		i = 1
 	} else {
 		i = 2
@@ -343,20 +357,44 @@ func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 		}
 	case 2:
 		if ComputeTrailingZeroes(hash, settings.PoWDifficultyOpBlock) {
-			ValidateOperation(*block)
+			ValidateOperation(receivedBlock)
 		} else {
 			return errors.New("No-op block proof of work does not match the zeroes of nonce")
 		}
 	}
-	err := SendBlockInfo(block)
-	return err
+
+	// After all validations pass, we set properties of block, append to blockchain and send to network
+	receivedBlock.PathLength = previousBlock.PathLength + 1
+	receivedBlock.PreviousBlock = previousBlock
+	receivedBlock.InkBank = previousBlock.TotalInkAmount
+	receivedBlock.TotalInkAmount = receivedBlock.InkBank // TODO: minus any operations performed for the generator of this block
+	previousBlock.IsEndBlock = false
+
+	if i == 1 {
+		receivedBlock.TotalInkAmount = receivedBlock.TotalInkAmount + settings.InkPerNoOpBlock
+	} else {
+		receivedBlock.TotalInkAmount = receivedBlock.TotalInkAmount + settings.InkPerOpBlock
+	}
+
+	blockList = append(blockList, receivedBlock)
+	err := SendBlockInfo(receivedBlock)
+	return er
+}
+
+func ExistInLocalBlockchain(blockHash string) bool {
+	for _, block := range blockList {
+		if blockHash == block.Hash {
+			return true
+		}
+	}
+
+	return false
 }
 
 // returns a boolean true if hash contains specified number of zeroes num at the end
 func ComputeTrailingZeroes(hash string, num uint8) bool {
-	var i uint8 = 0
 	var numZeroesStr = ""
-	for i = 1; i < num; i++ {
+	for i := 1; i <= num; i++ {
 		numZeroesStr += "0"
 	}
 	// HARDCODED FOR NOW NEED TO FIX IT REAL EASY JUST NEED TO GET MINER SETTINGS
@@ -368,14 +406,14 @@ func ComputeTrailingZeroes(hash string, num uint8) bool {
 }
 
 // checks that the previousHash in the block struct points to a previous generated block's Hash
-func CheckPreviousBlock(hash string) bool {
+func CheckPreviousBlock(hash string) (*Block, bool) {
 	for _, block := range blockList {
 		if block.Hash == hash {
-			return true
+			return block, true
 		}
 		continue
 	}
-	return false
+	return nil, false
 }
 
 // call this for op-blocks to validate the op-block
@@ -398,7 +436,7 @@ func ValidateOperation(block Block) error {
 
 	// Check that each operation has sufficient ink associated with the public key that generated the operation.
 	for _, operation := range block.SetOPs {
-		totalInk := block.InkAmount
+		totalInk := block.TotalInkAmount
 		currentOpCost := operation.OpInkCost
 
 		if totalInk >= currentOpCost {
