@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	mrand "math/rand"
 	"net"
 	"net/rpc"
@@ -69,8 +70,10 @@ type Block struct {
 
 type Operation struct {
 	ShapeType     blockartlib.ShapeType
-	OPSignature   string
+	UniqueID      string
 	ArtNodePubKey ecdsa.PublicKey
+	OPSigR        *big.Int
+	OPSigS        *big.Int
 
 	//Adding some new fields that could come in handy trying to validate
 	ValidateNum int
@@ -614,7 +617,7 @@ func GetMaxValidateNum(operations []Operation) int {
 }
 
 // Checks whether or not operations are validated or not (check validateNum against the block)
-func CheckOperationValidation(shapeHash string) {
+func CheckOperationValidation(uniqueID string) {
 	for {
 		// blockToCheck is the block that contains the checked Operation
 		blockToCheck := Block{}
@@ -626,7 +629,7 @@ func CheckOperationValidation(shapeHash string) {
 
 			for j := 0; j < len(blockList[i].SetOPs); j++ {
 
-				if blockList[i].SetOPs[j].OPSignature == shapeHash {
+				if blockList[i].SetOPs[j].UniqueID == uniqueID {
 					blockToCheck = blockList[i]
 					opToCheck = blockList[i].SetOPs[j]
 					break

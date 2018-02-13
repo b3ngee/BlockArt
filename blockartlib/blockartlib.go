@@ -34,22 +34,19 @@ const (
 
 type Operation struct {
 	ShapeType     int
-	OPSignature   string
+	UniqueID      string
 	ArtNodePubKey ecdsa.PublicKey
-	OPSig         OpSig
+	OPSigR        *big.Int
+	OPSigS        *big.Int
 
 	//Adding some new fields that could come in handy trying to validate
-	OpInkCost uint32
-	OpType    string
-	xstart    float64
-	xend      float64
-	ystart    float64
-	yend      float64
-}
-
-type OpSig struct {
-	r *big.Int
-	s *big.Int
+	ValidateNum int
+	OpInkCost   uint32
+	OpType      string
+	xStart      float64
+	xEnd        float64
+	yStart      float64
+	yEnd        float64
 }
 
 var canvasSettings CanvasSettings
@@ -346,12 +343,12 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	r, s, _ := ecdsa.Sign(rand.Reader, &nodePrivKey, []byte("This is the Private Key."))
 
-	shapeHash = r.String()
+	shapeHash = r.String() + s.String()
 
 	// shape hash will only take on unique value for r, but for op-sig validation we should pass
 	// in r and s but we will only need to look at r values for shapeHash validation?
 	//
-	err = canvasObj.MinerCli.Call("ArtKey.AddKey", Operation{OPSignature: shapeHash, OpInkCost: inkReq, OPSig: OpSig{r, s}}, &reply)
+	err = canvasObj.MinerCli.Call("ArtKey.AddKey", Operation{UniqueID: shapeHash, OpInkCost: inkReq, OPSigR: r, OPSigS: s}, &reply)
 	if err != nil {
 		return "", "", inkRemaining, DisconnectedError(address)
 	}
