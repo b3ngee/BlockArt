@@ -16,7 +16,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/md5"
-	"crypto/rand"
 	"crypto/x509"
 	"encoding/gob"
 	"encoding/hex"
@@ -196,7 +195,7 @@ func (minerKey *MinerKey) ReceiveOperation(operation *Operation, reply *string) 
 
 	if exists == false {
 		operationsHistory = append(operationsHistory, operation.UniqueID)
-		operations = append(operations, operation)
+		operations = append(operations, *operation)
 
 		for key, miner := range connectedMiners {
 
@@ -427,7 +426,7 @@ func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 func SendOperation(operation Operation) {
 
 	operationsHistory = append(operationsHistory, operation.UniqueID)
-	operations = append(operations, operation)
+	operations = append(operations, *operation)
 
 	reply := ""
 
@@ -488,7 +487,7 @@ func ValidateOperation(operations []Operation) error {
 	var totalOpCost uint32
 
 	// checking the signature private key public key matching
-	for _,operation := range operations{
+	for _, operation := range operations {
 		if ecdsa.Verify(&block.MinerPubKey, []byte(GlobalHash), operation.OPSigR, operation.OPSigS) {
 			fmt.Println("op-sig is valid .... continuing validation")
 		} else {
@@ -497,7 +496,7 @@ func ValidateOperation(operations []Operation) error {
 		artNodePK = operation.ArtNodePubKey
 		totalOpCost = operation.OpInkCost
 
-		if operation.OpType == "Delete"{
+		if operation.OpType == "Delete" {
 			for _, doneOp := range operationsHistory {
 				if operation.OPSignature == doneOp {
 					fmt.Println("Delete operation validation sucess, shape to be deleted exists")
@@ -507,7 +506,7 @@ func ValidateOperation(operations []Operation) error {
 			}
 		}
 
-		if operation.OpType == "Add"{
+		if operation.OpType == "Add" {
 			for _, doneOp := range operationsHistory {
 				if operation.OPSignature == doneOp {
 					return errors.New("Duplicate add operation of same shape")
@@ -519,7 +518,7 @@ func ValidateOperation(operations []Operation) error {
 	}
 
 	// checking ink amount
-	for _,block := range blockList{
+	for _, block := range blockList {
 		if block.MinerPubKey == artNodePK {
 			minerCurrentInk := GetInkAmount(block)
 			minerCurrentInk = minerCurrentInk - totalOpCost
@@ -532,8 +531,6 @@ func ValidateOperation(operations []Operation) error {
 			return errors.New("ArtNodePubKey's associated MinerPubKey could not be found")
 		}
 	}
-
-
 
 	return errors.New("failed to validate operation")
 
