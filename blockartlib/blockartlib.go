@@ -32,6 +32,26 @@ const (
 	// CIRCLE
 )
 
+type Operation struct {
+	ShapeType     int
+	OPSignature   string
+	ArtNodePubKey ecdsa.PublicKey
+	OPSig         OpSig
+
+	//Adding some new fields that could come in handy trying to validate
+	OpInkCost uint32
+	OpType    string
+	xstart    float64
+	xend      float64
+	ystart    float64
+	yend      float64
+}
+
+type OpSig struct {
+	r *big.Int
+	s *big.Int
+}
+
 var canvasSettings CanvasSettings
 
 // Settings for a canvas in BlockArt.
@@ -298,29 +318,43 @@ func (canvasObj CanvasObj) GetGenesisBlock() (blockHash string, err error) {
 }
 
 func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
-	// Adds a new shape to the canvas.
-	// Can return the following errors:
+
 	// - DisconnectedError
 	// - InsufficientInkError
 	// - InvalidShapeSvgStringError
+
+	address := canvasObj.MinerAddress
 
 	// - ShapeSvgStringTooLongError
 	if !HandleSvgStringLength(shapeSvgString) {
 		return "", "", inkRemaining, ShapeSvgStringTooLongError(shapeSvgString)
 	}
 
-	// - ShapeOverlapError
-
 	// - OutOfBoundsError
 	svgArray := strings.SplitAfter(shapeSvgString, "")
-
 	if !BoundCheck(svgArray) {
 		boundsErr := OutOfBoundsError{}
 		return "", "", inkRemaining, OutOfBoundsError(boundsErr)
 	}
 
-	inkReq := CalcInkUsed(svgArray)
+	// calculate amount of ink that this shape will use
+	inkReq := uint32(CalcInkUsed(svgArray))
 	fmt.Println(inkReq)
+
+	nodePrivKey := canvasObj.PrivateKey
+	var reply string
+
+	r, s, _ := ecdsa.Sign(rand.Reader, &nodePrivKey, []byte("This is the Private Key."))
+
+	shapeHash = r.String()
+
+	// shape hash will only take on unique value for r, but for op-sig validation we should pass
+	// in r and s but we will only need to look at r values for shapeHash validation?
+	//
+	err = canvasObj.MinerCli.Call("ArtKey.ReceiveOperation", Operation{OPSignature: shapeHash, OpInkCost: inkReq, OPSig: OpSig{r, s}}, &reply)
+	if err != nil {
+		return "", "", inkRemaining, DisconnectedError(address)
+	}
 
 	return shapeHash, blockHash, inkRemaining, err
 }
