@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	mrand "math/rand"
 	"net"
 	"net/rpc"
 	"os"
@@ -31,7 +32,6 @@ import (
 	"time"
 	//"math/big"
 )
-import mrand "math/rand"
 
 var settings blockartlib.MinerNetSettings
 
@@ -55,15 +55,16 @@ type Miner struct {
 }
 
 type Block struct {
-	PreviousBlock *Block
-	PreviousHash  string
-	Hash          string
-	SetOPs        []Operation
-	MinerPubKey   ecdsa.PublicKey
-	Nonce         uint32
-	InkAmount     uint32
-	PathLength    int
-	IsEndBlock    bool
+	PreviousBlock  *Block
+	PreviousHash   string
+	Hash           string
+	SetOPs         []Operation
+	MinerPubKey    ecdsa.PublicKey
+	Nonce          uint32
+	InkAmount      uint32
+	PathLength     int
+	IsEndBlock     bool
+	MaxValidateNum int
 }
 
 type Operation struct {
@@ -72,8 +73,9 @@ type Operation struct {
 	ArtNodePubKey ecdsa.PublicKey
 
 	//Adding some new fields that could come in handy trying to validate
-	OpInkCost uint32
-	OpType    string
+	OpInkCost   uint32
+	OpType      string
+	ValidateNum int
 }
 
 type LongestBlockChain struct {
@@ -81,7 +83,7 @@ type LongestBlockChain struct {
 }
 
 // Keeps track of all the keys & Miner Address so miner can send it to other miners.
-// var privKey ecdsa.PrivateKey
+var privKey ecdsa.PrivateKey
 var pubKey ecdsa.PublicKey
 
 var minerAddr net.Addr
@@ -97,6 +99,9 @@ var blockList = []Block{}
 
 // Array of incoming operations
 var operations = []Operation{}
+
+// Operations needed to be validated (consists of unique shape hash)
+var opToBeValidated = make([]string, 0)
 
 // FUNCTION CALLS
 
@@ -181,13 +186,24 @@ func (artkey *ArtKey) ValidateKey(artNodeKey *blockartlib.ArtNodeKey, canvasSett
 	return nil
 }
 
-func (artkey *ArtKey) GetInk(_ *struct{}, inkAmount *uint32) error {
-	for i := len(blockList) - 1; i >= 0; i-- {
+func (artkey *ArtKey) AddShape(operation *Operation, reply *bool) error {
 
-		if blockList[i].MinerPubKey == pubKey {
-			*inkAmount = blockList[i].InkAmount
-			break
-		}
+	return nil
+}
+
+func (artkey *ArtKey) GetInk(_ *struct{}, inkAmount *uint32) error {
+
+	longestBlockChain := FindBlockChainPath()
+	var totalAmountInk uint32
+	hash := []byte("To find out if key matches.")
+
+	// Get the total accumulated ink (last block with the same public key).
+	for i := len(longestBlockChain) - 1; i >= 0; i-- {
+		r, s, _ := ecdsa.Sign(rand.Reader, &privKey, hash)
+		// if blockList[i].MinerPubKey == pubKey {
+		// 	*inkAmount = blockList[i].InkAmount
+		// 	break
+		// }
 	}
 	return nil
 }
@@ -226,11 +242,11 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 			copy(copyOfOps, operations)
 			operations = operations[:0]
 
-			newBlock = Block{PreviousHash: prevBlockHash, SetOPs: copyOfOps, Nonce: 0, MinerPubKey: pubKey, InkAmount: settings.InkPerOpBlock}
+			newBlock = Block{PreviousHash: prevBlockHash, SetOPs: copyOfOps, Nonce: 0, MinerPubKey: pubKey, InkAmount: settings.InkPerOpBlock, MaxValidateNum: GetMaxValidateNum(copyOfOps)}
 			difficulty = int(settings.PoWDifficultyOpBlock)
 		} else {
 			isNoOp = true
-			newBlock = Block{PreviousHash: prevBlockHash, Nonce: 0, MinerPubKey: pubKey, InkAmount: settings.InkPerNoOpBlock}
+			newBlock = Block{PreviousHash: prevBlockHash, Nonce: 0, MinerPubKey: pubKey, InkAmount: settings.InkPerNoOpBlock, MaxValidateNum: 0}
 			difficulty = int(settings.PoWDifficultyNoOpBlock)
 		}
 
@@ -296,7 +312,6 @@ func FindBlockChainPath(block *Block) []Block {
 	return path
 }
 
-
 // TODO: INCOMPLETE?
 // send out the block information to peers in the connected network of miners
 func SendBlockInfo(block *Block) error {
@@ -314,8 +329,6 @@ func SendBlockInfo(block *Block) error {
 	}
 	return errors.New("Parse error")
 }
-
-
 
 // once information about a block is received unpack that message and update ink-miner
 func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
@@ -506,6 +519,68 @@ func SyncMinersLongestChain() {
 	}
 }
 
+// Gets the Max Validate Number for a block using set of operations inside it.
+func GetMaxValidateNum(operations []Operation) int {
+	maxValidateNum := 0
+	for i := 0; i < len(operations); i++ {
+		if operations[i].ValidateNum > maxValidateNum {
+			maxValidateNum = operations[i].ValidateNum
+		}
+	}
+	return maxValidateNum
+}
+
+// Checks whether or not operations are validated or not (check validateNum against the block)
+func CheckOperationValidation(shapeHash string) {
+	for {
+		// blockToCheck is the block that contains the checked Operation
+		blockToCheck := Block{}
+		opToCheck := Operation{}
+
+		// Get the block that we need (where the operation is in)
+		for i := 0; i < len(blockList); i++ {
+			opList := blockList[i].SetOPs
+
+			for j := 0; j < len(blockList[i].SetOPs); j++ {
+
+				if blockList[i].SetOPs[j].OPSignature == shapeHash {
+					blockToCheck = blockList[i]
+					opToCheck = blockList[i].SetOPs[j]
+					break
+				}
+			}
+		}
+
+		// Tail block of the blockChain that consists of blockToCheck
+		endBlock := Block{}
+
+		// Goes through each end blocks to find the one that consists blockToCheck
+		for k := len(blockList); k > 0; k-- {
+
+			if blockList[k].IsEndBlock == true {
+
+				blockChain := FindBlockChainPath(blockList[k])
+				for l := 0; l < len(blockChain); l++ {
+
+					if blockChain[l].Hash == blockToCheck.Hash {
+						endBlock = blockList[k]
+						break
+					}
+				}
+			}
+		}
+
+		if (endBlock == Block{}) == false {
+			// Stop the infinite for loop when we find something to send back to the Art Node
+			if endBlock.PathLength-blockToCheck.PathLength >= opToCheck.ValidateNum {
+				break
+			}
+		}
+
+		time.Sleep(5 * time.Second)
+	}
+}
+
 func (artkey *ArtKey) GetChildren(blockHash string, children *[]string) error {
 	hashExists := false
 	result := []string{}
@@ -541,7 +616,7 @@ func main() {
 	serverAddr := os.Args[1]
 
 	privateKeyBytesRestored, _ := hex.DecodeString(os.Args[3])
-	privKey, _ := x509.ParseECPrivateKey(privateKeyBytesRestored)
+	privKey, _ = x509.ParseECPrivateKey(privateKeyBytesRestored)
 
 	pubKey = privKey.PublicKey
 

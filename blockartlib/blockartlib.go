@@ -17,8 +17,8 @@ import (
 	"math/big"
 	"net"
 	"net/rpc"
-	"strings"
 	"strconv"
+	"strings"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -249,19 +249,20 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 		PrivateKey:   privKey,
 		MinerCli:     cli}
 
-	// For now return DisconnectedError
 	return canvasObj, setting, err
 }
 
+// Closes the canvas/connection to the BlockArt network.
+// - DisconnectedError
 func (canvasObj CanvasObj) CloseCanvas() (inkRemaining uint32, err error) {
 	return inkRemaining, err
 }
 
+// Retrieves the children blocks of the block identified by blockHash.
+// Can return the following errors:
+// - DisconnectedError
+// - InvalidBlockHashError
 func (canvasObj CanvasObj) GetChildren(blockHash string) (blockHashes []string, err error) {
-	// Retrieves the children blocks of the block identified by blockHash.
-	// Can return the following errors:
-	// - DisconnectedError
-	// - InvalidBlockHashError
 
 	address := canvasObj.MinerAddress
 
@@ -277,6 +278,9 @@ func (canvasObj CanvasObj) GetChildren(blockHash string) (blockHashes []string, 
 	return reply, nil
 }
 
+// Returns the block hash of the genesis block.
+// Can return the following errors:
+// - DisconnectedError
 func (canvasObj CanvasObj) GetGenesisBlock() (blockHash string, err error) {
 	// Returns the block hash of the genesis block.
 	// Can return the following errors:
@@ -300,19 +304,15 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 	// - InsufficientInkError
 	// - InvalidShapeSvgStringError
 
-
 	// - ShapeSvgStringTooLongError
-	if !HandleSvgStringLength(shapeSvgString){
+	if !HandleSvgStringLength(shapeSvgString) {
 		return "", "", inkRemaining, ShapeSvgStringTooLongError(shapeSvgString)
 	}
 
-
 	// - ShapeOverlapError
 
-
-
 	// - OutOfBoundsError
-	svgArray := strings.SplitAfter(shapeSvgString,"")
+	svgArray := strings.SplitAfter(shapeSvgString, "")
 
 	if !BoundCheck(svgArray) {
 		boundsErr := OutOfBoundsError{}
@@ -322,13 +322,8 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 	inkReq := CalcInkUsed(svgArray)
 	fmt.Println(inkReq)
 
-
-
-
-
 	return shapeHash, blockHash, inkRemaining, err
 }
-
 
 func (canvasObj CanvasObj) GetSvgString(shapeHash string) (svgString string, err error) {
 	return svgString, err
@@ -342,21 +337,27 @@ func (canvasObj CanvasObj) GetInk() (inkRemaining uint32, err error) {
 	return inkRemaining, err
 }
 
+// Removes a shape from the canvas.
+// Can return the following errors:
+// - DisconnectedError
+// - ShapeOwnerError
 func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
 	return inkRemaining, err
 }
 
+// Retrieves hashes contained by a specific block.
+// Can return the following errors:
+// - DisconnectedError
+// - InvalidBlockHashError
 func (canvasObj CanvasObj) GetShapes(blockHash string) (shapeHashes []string, err error) {
 	return shapeHashes, err
 }
 
-
 ///////////////////////////////// HELPER FUNCTIONS BELOW
 
-
 // svg string can be at most 128 characters in string length
-func HandleSvgStringLength(svgstr string)bool{
-	if len(svgstr) > 128{
+func HandleSvgStringLength(svgstr string) bool {
+	if len(svgstr) > 128 {
 		return false
 	}
 	return true
@@ -367,46 +368,43 @@ func CalcInkUsed(svgArray []string) int64 {
 	vert := svgArray[5]
 	var totalInk int64 = 0
 
-	if fill == "H" && vert == "V"{
+	if fill == "H" && vert == "V" {
 		hfill := svgArray[4]
-		hink,err := strconv.ParseInt(hfill, 0, 32)
-   		HandleError(err)
-   		vfill := svgArray[6]
-		vink,err := strconv.ParseInt(vfill, 0, 32)
-   		HandleError(err)
+		hink, err := strconv.ParseInt(hfill, 0, 32)
+		HandleError(err)
+		vfill := svgArray[6]
+		vink, err := strconv.ParseInt(vfill, 0, 32)
+		HandleError(err)
 
-   		totalInk = vink * hink
-   		return totalInk
+		totalInk = vink * hink
+		return totalInk
 	} else {
 		anyfill := svgArray[4]
-		hOrVInk,err := strconv.ParseInt(anyfill, 0, 32)
-   		HandleError(err)
-   		return hOrVInk
+		hOrVInk, err := strconv.ParseInt(anyfill, 0, 32)
+		HandleError(err)
+		return hOrVInk
 	}
 
 	// or the fill will be the line L
 
 	startlinex := svgArray[1]
-	x,err := strconv.ParseInt(startlinex, 0, 32)
+	x, err := strconv.ParseInt(startlinex, 0, 32)
 	HandleError(err)
 	startliney := svgArray[2]
-	y,err := strconv.ParseInt(startliney, 0, 32)
+	y, err := strconv.ParseInt(startliney, 0, 32)
 	HandleError(err)
 	endlinex := svgArray[4]
-	xend,err := strconv.ParseInt(endlinex, 0, 32)
+	xend, err := strconv.ParseInt(endlinex, 0, 32)
 	HandleError(err)
 	endliney := svgArray[5]
-	yend,err := strconv.ParseInt(endliney, 0, 32)
+	yend, err := strconv.ParseInt(endliney, 0, 32)
 	HandleError(err)
-	distance := math.Pow(float64(x)-float64(xend), 2)+math.Pow(float64(y)-float64(yend), 2)
+	distance := math.Pow(float64(x)-float64(xend), 2) + math.Pow(float64(y)-float64(yend), 2)
 	rootDis := int64(math.Sqrt(distance))
-
-
 
 	return rootDis
 
 }
-
 
 // checks the boundary settings for the position of shape, EX "M 0 10 H 20" checks 0 and 10
 func BoundCheck(svgArray []string) bool {
@@ -415,74 +413,73 @@ func BoundCheck(svgArray []string) bool {
 	yInt := svgArray[2]
 	fill := svgArray[3]
 
-   	x,err := strconv.ParseInt(xInt, 0, 32)
-   	HandleError(err)
-   	y,err := strconv.ParseInt(yInt, 0, 32)
-   	HandleError(err)
+	x, err := strconv.ParseInt(xInt, 0, 32)
+	HandleError(err)
+	y, err := strconv.ParseInt(yInt, 0, 32)
+	HandleError(err)
 
-   	if x < 0 {
-   		return false
-   	} 
-   	if y < 0 {
-   		return false
-   	}
-   	if x > int64(canvasSettings.CanvasXMax) {
-   		return false
-   	}
-   	if y > int64(canvasSettings.CanvasYMax) {
-   		return false
-   	}
+	if x < 0 {
+		return false
+	}
+	if y < 0 {
+		return false
+	}
+	if x > int64(canvasSettings.CanvasXMax) {
+		return false
+	}
+	if y > int64(canvasSettings.CanvasYMax) {
+		return false
+	}
 
-   	if fill == "H"{
-   		hDis := svgArray[4]
-   		xDis,err := strconv.ParseInt(hDis, 0, 32)
-   		HandleError(err)
-   		xEnd := xDis + x
-   		if xEnd > int64(canvasSettings.CanvasXMax) {
-   			return false
-   		} else {
-   			moreFill := svgArray[5]
-   			if moreFill == "V"{
-   				hvDis := svgArray[6]
-   				yxDis,err := strconv.ParseInt(hvDis, 0, 32)
-   				HandleError(err)
-   				yxEnd := yxDis + y
-   				if yxEnd > int64(canvasSettings.CanvasYMax) {
-   					return false
-   				}
-   			}
-   		}
-   	}
+	if fill == "H" {
+		hDis := svgArray[4]
+		xDis, err := strconv.ParseInt(hDis, 0, 32)
+		HandleError(err)
+		xEnd := xDis + x
+		if xEnd > int64(canvasSettings.CanvasXMax) {
+			return false
+		} else {
+			moreFill := svgArray[5]
+			if moreFill == "V" {
+				hvDis := svgArray[6]
+				yxDis, err := strconv.ParseInt(hvDis, 0, 32)
+				HandleError(err)
+				yxEnd := yxDis + y
+				if yxEnd > int64(canvasSettings.CanvasYMax) {
+					return false
+				}
+			}
+		}
+	}
 
-   	if fill == "V"{
-   		vDis := svgArray[4]
-   		yDis,err := strconv.ParseInt(vDis, 0, 32)
-   		HandleError(err)
-   		yEnd := yDis + y
-   		if yEnd > int64(canvasSettings.CanvasYMax) {
-   			return false
-   		}
-   	}
+	if fill == "V" {
+		vDis := svgArray[4]
+		yDis, err := strconv.ParseInt(vDis, 0, 32)
+		HandleError(err)
+		yEnd := yDis + y
+		if yEnd > int64(canvasSettings.CanvasYMax) {
+			return false
+		}
+	}
 
-   	if fill == "L"{
-   		xline := svgArray[4]
-   		yline := svgArray[5]
-   		xlend,err := strconv.ParseInt(xline, 0, 32)
-   		HandleError(err)
-   		ylend,err := strconv.ParseInt(yline, 0, 32)
-   		HandleError(err)
+	if fill == "L" {
+		xline := svgArray[4]
+		yline := svgArray[5]
+		xlend, err := strconv.ParseInt(xline, 0, 32)
+		HandleError(err)
+		ylend, err := strconv.ParseInt(yline, 0, 32)
+		HandleError(err)
 
-   		if ylend > int64(canvasSettings.CanvasYMax) {
-   			return false
-   		}
-   		if xlend > int64(canvasSettings.CanvasYMax) {
-   			return false
-   		}
-   	}
+		if ylend > int64(canvasSettings.CanvasYMax) {
+			return false
+		}
+		if xlend > int64(canvasSettings.CanvasYMax) {
+			return false
+		}
+	}
 
-    return true
+	return true
 }
-
 
 func HandleError(err error) {
 	if err != nil {
