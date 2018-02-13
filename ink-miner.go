@@ -399,7 +399,9 @@ func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 		}
 	case 2:
 		if ComputeTrailingZeroes(hash, settings.PoWDifficultyOpBlock) {
-			ValidateOperation(receivedBlock)
+			for _,operation := range receivedBlock.SetOPs{
+				ValidateOperation(operation)
+			}
 		} else {
 			return errors.New("No-op block proof of work does not match the zeroes of nonce")
 		}
@@ -477,29 +479,23 @@ func CheckPreviousBlock(hash string) (*Block, bool) {
 	return nil, false
 }
 
+
 // call this for op-blocks to validate the op-block
-func ValidateOperation(operations []Operation) error {
+func ValidateOperation(operation Operation) error {
 
 	// made a dummy private key but it should correspond to blockartlib shape added?
 	// need clarification from you guys
 	// Check that each operation in the block has a valid signature
 
-	var artNodePK ecdsa.PublicKey
-	var totalOpCost uint32
-
-	// checking the signature private key public key matching
-	for _,operation := range operations{
-		if ecdsa.Verify(&block.MinerPubKey, []byte(GlobalHash), operation.OPSigR, operation.OPSigS) {
+	if ecdsa.Verify(&operation.ArtNodePubKey, []byte(GlobalHash), operation.OPSigR, operation.OPSigS) {
 			fmt.Println("op-sig is valid .... continuing validation")
 		} else {
 			return errors.New("failed to validate operation signature")
 		}
-		artNodePK = operation.ArtNodePubKey
-		totalOpCost = operation.OpInkCost
 
-		if operation.OpType == "Delete"{
+	if operation.OpType == "Delete"{
 			for _, doneOp := range operationsHistory {
-				if operation.OPSignature == doneOp {
+				if operation.UniqueID == doneOp {
 					fmt.Println("Delete operation validation sucess, shape to be deleted exists")
 				} else {
 					return errors.New("Delete operation could not find a shape previously added")
@@ -507,22 +503,22 @@ func ValidateOperation(operations []Operation) error {
 			}
 		}
 
-		if operation.OpType == "Add"{
+	if operation.OpType == "Add"{
 			for _, doneOp := range operationsHistory {
-				if operation.OPSignature == doneOp {
+				if operation.UniqueID == doneOp {
 					return errors.New("Duplicate add operation of same shape")
 				} else {
 					fmt.Println("identical signature could not be found, add shape validation sucess")
 				}
 			}
 		}
-	}
+
 
 	// checking ink amount
 	for _,block := range blockList{
-		if block.MinerPubKey == artNodePK {
-			minerCurrentInk := GetInkAmount(block)
-			minerCurrentInk = minerCurrentInk - totalOpCost
+		if block.MinerPubKey == operation.ArtNodePubKey {
+			minerCurrentInk := GetInkAmount(&block)
+			minerCurrentInk = minerCurrentInk - operation.OpInkCost
 			if minerCurrentInk < 0 {
 				return errors.New("the total operation cost exceeds ink-miner supply")
 			} else {
@@ -532,11 +528,7 @@ func ValidateOperation(operations []Operation) error {
 			return errors.New("ArtNodePubKey's associated MinerPubKey could not be found")
 		}
 	}
-
-
-
 	return errors.New("failed to validate operation")
-
 }
 
 // HELPER FUNCTIONS
