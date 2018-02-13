@@ -33,20 +33,23 @@ const (
 )
 
 type Operation struct {
-	ShapeType     int
+	ShapeType     ShapeType
 	UniqueID      string
 	ArtNodePubKey ecdsa.PublicKey
 	OPSigR        *big.Int
 	OPSigS        *big.Int
 
 	//Adding some new fields that could come in handy trying to validate
-	ValidateNum int
-	OpInkCost   uint32
-	OpType      string
-	xStart      float64
-	xEnd        float64
-	yStart      float64
-	yEnd        float64
+	ValidateNum    int
+	ShapeSvgString string
+	Fill           string
+	Stroke         string
+	OpInkCost      uint32
+	OpType         string
+	xStart         float64
+	xEnd           float64
+	yStart         float64
+	yEnd           float64
 }
 
 var canvasSettings CanvasSettings
@@ -280,7 +283,6 @@ func (canvasObj CanvasObj) CloseCanvas() (inkRemaining uint32, err error) {
 // - DisconnectedError
 // - InvalidBlockHashError
 func (canvasObj CanvasObj) GetChildren(blockHash string) (blockHashes []string, err error) {
-
 	address := canvasObj.MinerAddress
 
 	var reply []string
@@ -299,10 +301,6 @@ func (canvasObj CanvasObj) GetChildren(blockHash string) (blockHashes []string, 
 // Can return the following errors:
 // - DisconnectedError
 func (canvasObj CanvasObj) GetGenesisBlock() (blockHash string, err error) {
-	// Returns the block hash of the genesis block.
-	// Can return the following errors:
-	// - DisconnectedError
-
 	address := canvasObj.MinerAddress
 
 	var reply string
@@ -318,7 +316,9 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	// - DisconnectedError
 	// - InsufficientInkError
-	// - InvalidShapeSvgStringError
+	// - InvalidShapeSvgStringError TODO: when fill or stroke is empty https://piazza.com/class/jbyh5bsk4ez3cn?cid=414
+
+	// For parsing shapeSvgString:  https://piazza.com/class/jbyh5bsk4ez3cn?cid=416
 
 	address := canvasObj.MinerAddress
 
@@ -352,7 +352,22 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	x, xe, y, ye := GetCoordinates(svgArray)
 
-	err = canvasObj.MinerCli.Call("ArtKey.AddKey", Operation{UniqueID: shapeHash, OpInkCost: inkReq, OPSigR: r, OPSigS: s, OpType: "Add", xStart: x, xEnd: xe, yStart: y, yEnd: ye}, &reply)
+	err = canvasObj.MinerCli.Call("ArtKey.AddKey", Operation{
+		UniqueID:       shapeHash,
+		OpInkCost:      inkReq,
+		OPSigR:         r,
+		OPSigS:         s,
+		OpType:         "Add",
+		ValidateNum:    int(validateNum),
+		ShapeType:      shapeType,
+		ShapeSvgString: shapeSvgString,
+		Fill:           fill,
+		Stroke:         stroke,
+		xStart:         x,
+		xEnd:           xe,
+		yStart:         y,
+		yEnd:           ye,
+	}, &reply)
 	if err != nil {
 		return "", "", inkRemaining, DisconnectedError(address)
 	}
@@ -360,7 +375,29 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 	return shapeHash, blockHash, inkRemaining, err
 }
 
+// Returns the encoding of the shape as an svg string.
+// Can return the following errors:
+// - DisconnectedError
+// - InvalidShapeHashError
 func (canvasObj CanvasObj) GetSvgString(shapeHash string) (svgString string, err error) {
+	address := canvasObj.MinerAddress
+
+	var reply Operation
+	err = canvasObj.MinerCli.Call("ArtKey.GetOperationWithShapeHash", shapeHash, &reply)
+	if err != nil {
+		return "", DisconnectedError(address)
+	}
+	if reply.UniqueID == "" {
+		return "", InvalidShapeHashError(shapeHash)
+	}
+
+	shapeType := reply.ShapeType
+	fill := reply.Fill
+	stroke := reply.Stroke
+	dString := reply.ShapeSvgString
+
+	svgString = ConstructSvgString(shapeType, dString, fill, stroke)
+
 	return svgString, err
 }
 
@@ -390,6 +427,15 @@ func (canvasObj CanvasObj) GetShapes(blockHash string) (shapeHashes []string, er
 
 ///////////////////////////////// HELPER FUNCTIONS BELOW
 
+func ConstructSvgString(shapeType ShapeType, svgString string, fill string, stroke string) string {
+	// <path d="M 0 0 L 20 20" stroke="red" fill="transparent"/>
+	if shapeType == PATH {
+		return fmt.Sprintf("<path d=\"%s\" stroke=\"%s\" fill=\"%s\" />", svgString, stroke, fill)
+	}
+
+	return ""
+}
+
 // svg string can be at most 128 characters in string length
 func HandleSvgStringLength(svgstr string) bool {
 	if len(svgstr) > 128 {
@@ -406,46 +452,46 @@ func GetCoordinates(svgArray []string) (float64, float64, float64, float64) {
 	xstart, err := strconv.ParseInt(svgArray[1], 0, 32)
 	HandleError(err)
 	xend := int64(0)
-	ystart, err :=  strconv.ParseInt(svgArray[2], 0, 32)
+	ystart, err := strconv.ParseInt(svgArray[2], 0, 32)
 	HandleError(err)
 	yend := int64(0)
 
-	if hor == "H" && vert == "V"{
+	if hor == "H" && vert == "V" {
 		hendstr := svgArray[4]
-		hend,err := strconv.ParseInt(hendstr, 0, 32)
+		hend, err := strconv.ParseInt(hendstr, 0, 32)
 		HandleError(err)
 		xend = hend
 		vendstr := svgArray[6]
-		vend,err := strconv.ParseInt(vendstr, 0, 32)
+		vend, err := strconv.ParseInt(vendstr, 0, 32)
 		HandleError(err)
 		yend = vend
 
 	} else {
-		if hor == "H"{
+		if hor == "H" {
 			hendstr := svgArray[4]
-			hend,err := strconv.ParseInt(hendstr, 0, 32)
+			hend, err := strconv.ParseInt(hendstr, 0, 32)
 			HandleError(err)
 			xend = hend
 			yend = -1
 		} else {
-			if hor == "V"{
+			if hor == "V" {
 				vendstr := svgArray[4]
-			    vend,err := strconv.ParseInt(vendstr, 0, 32)
-			    HandleError(err)
-			    yend = vend
-			    xend = -1
+				vend, err := strconv.ParseInt(vendstr, 0, 32)
+				HandleError(err)
+				yend = vend
+				xend = -1
 			}
 		}
 	}
 
 	// then we know its a line
 	hendstr := svgArray[4]
-	hend,err := strconv.ParseInt(hendstr, 0, 32)
+	hend, err := strconv.ParseInt(hendstr, 0, 32)
 	HandleError(err)
 	xend = hend
 
 	vendstr := svgArray[5]
-	vend,err := strconv.ParseInt(vendstr, 0, 32)
+	vend, err := strconv.ParseInt(vendstr, 0, 32)
 	HandleError(err)
 	yend = vend
 
