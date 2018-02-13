@@ -89,7 +89,7 @@ type LongestBlockChain struct {
 }
 
 // Keeps track of all the keys & Miner Address so miner can send it to other miners.
-var privKey *ecdsa.PrivateKey
+var privKey ecdsa.PrivateKey
 var pubKey ecdsa.PublicKey
 
 var minerAddr net.Addr
@@ -226,7 +226,7 @@ func (artkey *ArtKey) AddShape(operation *Operation, reply *bool) error {
 
 func (artkey *ArtKey) GetInk(_ *struct{}, inkAmount *uint32) error {
 	for i := len(longestBlockChain) - 1; i >= 0; i-- {
-		if blockList[i].MinerPubKey == pubKey {
+		if IsPublicKeySame(blockList[i].MinerPubKey) {
 			*inkAmount = blockList[i].TotalInkAmount
 			break
 		}
@@ -243,7 +243,7 @@ func validatedWithNetwork(block Block) bool {
 func GetInkAmount(prevBlock *Block) uint32 {
 	temp := *prevBlock
 	for i := prevBlock.PathLength; i > 1; i-- {
-		if pubKey == temp.MinerPubKey { // TODO: change pubkey comparisons
+		if IsPublicKeySame(temp.MinerPubKey) {
 			return temp.TotalInkAmount
 			break
 		}
@@ -469,13 +469,15 @@ func ComputeTrailingZeroes(hash string, num uint8) bool {
 
 // checks that the previousHash in the block struct points to a previous generated block's Hash
 func CheckPreviousBlock(hash string) (*Block, bool) {
-	for _, block := range blockList {
+	var blockPtr *Block
+	for i, block := range blockList {
 		if block.Hash == hash {
-			return block, true
+			blockPtr = &blockList[i]
+			return blockPtr, true
 		}
 		continue
 	}
-	return nil, false
+	return blockPtr, false
 }
 
 // call this for op-blocks to validate the op-block
@@ -670,6 +672,20 @@ func CheckOperationValidation(uniqueID string) {
 	}
 }
 
+// Used to compare public keys
+func IsPublicKeySame(incomingPubKey ecdsa.PublicKey) bool {
+	data := []byte("This is private key")
+	r, s, _ := ecdsa.Sign(rand.Reader, &privKey, data)
+
+	if ecdsa.Verify(&incomingPubKey, data, r, s) {
+		fmt.Println("This is the same")
+		return true
+	}
+
+	fmt.Println("This is not the same")
+	return false
+}
+
 func (artkey *ArtKey) GetChildren(blockHash string, children *[]string) error {
 	hashExists := false
 	result := []string{}
@@ -705,8 +721,9 @@ func main() {
 	serverAddr := os.Args[1]
 
 	privateKeyBytesRestored, _ := hex.DecodeString(os.Args[3])
-	privKey, _ = x509.ParseECPrivateKey(privateKeyBytesRestored)
+	priv, _ := x509.ParseECPrivateKey(privateKeyBytesRestored)
 
+	privKey = *priv
 	pubKey = privKey.PublicKey
 
 	lis, err := net.Listen("tcp", ":0")
