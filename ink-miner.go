@@ -201,7 +201,7 @@ func (minerKey *MinerKey) ReceiveOperation(operation *Operation, reply *string) 
 
 	if exists == false {
 		operationsHistory = append(operationsHistory, operation.UniqueID)
-		operations = append(operations, operation)
+		operations = append(operations, *operation)
 
 		for key, miner := range connectedMiners {
 
@@ -232,7 +232,7 @@ func (artkey *ArtKey) AddShape(operation *Operation, reply *bool) error {
 
 func (artkey *ArtKey) GetInk(_ *struct{}, inkAmount *uint32) error {
 	for i := len(longestBlockChain) - 1; i >= 0; i-- {
-		if blockList[i].MinerPubKey == pubKey {
+		if IsPublicKeySame(blockList[i].MinerPubKey) {
 			*inkAmount = blockList[i].TotalInkAmount
 			break
 		}
@@ -243,7 +243,7 @@ func (artkey *ArtKey) GetInk(_ *struct{}, inkAmount *uint32) error {
 func GetInkAmount(prevBlock *Block) uint32 {
 	temp := *prevBlock
 	for i := prevBlock.PathLength; i > 1; i-- {
-		if pubKey == temp.MinerPubKey { // TODO: change pubkey comparisons
+		if IsPublicKeySame(temp.MinerPubKey) {
 			return temp.TotalInkAmount
 			break
 		}
@@ -301,7 +301,7 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 				newBlock.PreviousHash = prevBlockHash
 				newBlock.IsEndBlock = true
 
-				SendBlockInfo(&newBlock)
+				SendBlockInfo(newBlock)
 				break
 			}
 			newBlock.Nonce = newBlock.Nonce + 1
@@ -460,8 +460,8 @@ func FindLastBlockOfLongestChain() []*Block {
 	return lastBlocks
 }
 
-func FindBlockChainPath(block *Block) []Block {
-	tempBlock := *block
+func FindBlockChainPath(block Block) []Block {
+	tempBlock := block
 	path := []Block{}
 
 	for i := block.PathLength; i > 1; i-- {
@@ -475,7 +475,7 @@ func FindBlockChainPath(block *Block) []Block {
 
 // TODO: INCOMPLETE?
 // send out the block information to peers in the connected network of miners
-func SendBlockInfo(block *Block) error {
+func SendBlockInfo(block Block) error {
 
 	replyStr := ""
 
@@ -553,7 +553,8 @@ func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 
 	blockList = append(blockList, receivedBlock)
 	err := SendBlockInfo(receivedBlock)
-	return nil
+
+	return err
 }
 
 // Floods the network of miners with Operations
@@ -588,7 +589,7 @@ func ExistInLocalBlockchain(blockHash string) bool {
 // returns a boolean true if hash contains specified number of zeroes num at the end
 func ComputeTrailingZeroes(hash string, num uint8) bool {
 	var numZeroesStr = ""
-	for i := 1; i <= num; i++ {
+	for i := 1; i <= int(num); i++ {
 		numZeroesStr += "0"
 	}
 	// HARDCODED FOR NOW NEED TO FIX IT REAL EASY JUST NEED TO GET MINER SETTINGS
@@ -601,13 +602,15 @@ func ComputeTrailingZeroes(hash string, num uint8) bool {
 
 // checks that the previousHash in the block struct points to a previous generated block's Hash
 func CheckPreviousBlock(hash string) (*Block, bool) {
-	for _, block := range blockList {
+	var blockPtr *Block
+	for i, block := range blockList {
 		if block.Hash == hash {
-			return block, true
+			blockPtr = &blockList[i]
+			return blockPtr, true
 		}
 		continue
 	}
-	return nil, false
+	return blockPtr, false
 }
 
 // call this for op-blocks to validate the op-block
@@ -791,7 +794,7 @@ func CheckOperationValidation(uniqueID string) {
 			}
 		}
 
-		if (endBlock == Block{}) == false {
+		if endBlock.Hash != "" {
 			// Stop the infinite for loop when we find something to send back to the Art Node
 			if endBlock.PathLength-blockToCheck.PathLength >= opToCheck.ValidateNum {
 				break
@@ -800,6 +803,20 @@ func CheckOperationValidation(uniqueID string) {
 
 		time.Sleep(5 * time.Second)
 	}
+}
+
+// Used to compare public keys
+func IsPublicKeySame(incomingPubKey ecdsa.PublicKey) bool {
+	data := []byte("This is private key")
+	r, s, _ := ecdsa.Sign(rand.Reader, &privKey, data)
+
+	if ecdsa.Verify(&incomingPubKey, data, r, s) {
+		fmt.Println("This is the same")
+		return true
+	}
+
+	fmt.Println("This is not the same")
+	return false
 }
 
 func (artkey *ArtKey) GetChildren(blockHash string, children *[]string) error {
@@ -837,8 +854,9 @@ func main() {
 	serverAddr := os.Args[1]
 
 	privateKeyBytesRestored, _ := hex.DecodeString(os.Args[3])
-	privKey, _ = x509.ParseECPrivateKey(privateKeyBytesRestored)
+	priv, _ := x509.ParseECPrivateKey(privateKeyBytesRestored)
 
+	privKey = *priv
 	pubKey = privKey.PublicKey
 
 	lis, err := net.Listen("tcp", ":0")
