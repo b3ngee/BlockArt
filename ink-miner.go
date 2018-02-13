@@ -278,13 +278,13 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 		endBlocks := FindLastBlockOfLongestChain()
 
 		if len(endBlocks) > 1 {
-			if !isNoop {
+			if !isNoOp {
 				prevBlock = SelectValidBranch(endBlocks, newBlock)
 			} else {
 				prevBlock = SelectRandomBranch(endBlocks)
 			}
 		} else {
-			prevBlock = *endBlocks[0]
+			prevBlock = endBlocks[0]
 		}
 
 		prevBlockHash := ComputeBlockHash(*prevBlock)
@@ -301,7 +301,7 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 				newBlock.PreviousHash = prevBlockHash
 				newBlock.IsEndBlock = true
 
-				SendBlockInfo(&newBlock)
+				SendBlockInfo(newBlock)
 				break
 			}
 			newBlock.Nonce = newBlock.Nonce + 1
@@ -343,7 +343,7 @@ func FindBlockChainPath(block *Block) []Block {
 
 // TODO: INCOMPLETE?
 // send out the block information to peers in the connected network of miners
-func SendBlockInfo(block *Block) error {
+func SendBlockInfo(block Block) error {
 
 	replyStr := ""
 
@@ -421,14 +421,14 @@ func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 
 	blockList = append(blockList, receivedBlock)
 	err := SendBlockInfo(receivedBlock)
-	return er
+	return err
 }
 
 // Floods the network of miners with Operations
 func SendOperation(operation Operation) {
 
 	operationsHistory = append(operationsHistory, operation.UniqueID)
-	operations = append(operations, *operation)
+	operations = append(operations, operation)
 
 	reply := ""
 
@@ -456,7 +456,7 @@ func ExistInLocalBlockchain(blockHash string) bool {
 // returns a boolean true if hash contains specified number of zeroes num at the end
 func ComputeTrailingZeroes(hash string, num uint8) bool {
 	var numZeroesStr = ""
-	for i := 1; i <= num; i++ {
+	for i := 1; i <= int(num); i++ {
 		numZeroesStr += "0"
 	}
 	// HARDCODED FOR NOW NEED TO FIX IT REAL EASY JUST NEED TO GET MINER SETTINGS
@@ -659,7 +659,7 @@ func CheckOperationValidation(uniqueID string) {
 			}
 		}
 
-		if (endBlock == Block{}) == false {
+		if endBlock.Hash != "" {
 			// Stop the infinite for loop when we find something to send back to the Art Node
 			if endBlock.PathLength-blockToCheck.PathLength >= opToCheck.ValidateNum {
 				break
