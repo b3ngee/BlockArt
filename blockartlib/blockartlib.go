@@ -328,7 +328,7 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 	}
 
 	// - OutOfBoundsError
-	svgArray := strings.SplitAfter(shapeSvgString, "")
+	svgArray := strings.Split(shapeSvgString, " ")
 	if !BoundCheck(svgArray) {
 		boundsErr := OutOfBoundsError{}
 		return "", "", inkRemaining, OutOfBoundsError(boundsErr)
@@ -347,8 +347,12 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	// shape hash will only take on unique value for r, but for op-sig validation we should pass
 	// in r and s but we will only need to look at r values for shapeHash validation?
-	//
-	err = canvasObj.MinerCli.Call("ArtKey.AddKey", Operation{UniqueID: shapeHash, OpInkCost: inkReq, OPSigR: r, OPSigS: s}, &reply)
+
+	//set the coordinates
+
+	x, xe, y, ye := GetCoordinates(svgArray)
+
+	err = canvasObj.MinerCli.Call("ArtKey.AddKey", Operation{UniqueID: shapeHash, OpInkCost: inkReq, OPSigR: r, OPSigS: s, OpType: "Add", xStart: x, xEnd: xe, yStart: y, yEnd: ye}, &reply)
 	if err != nil {
 		return "", "", inkRemaining, DisconnectedError(address)
 	}
@@ -392,6 +396,60 @@ func HandleSvgStringLength(svgstr string) bool {
 		return false
 	}
 	return true
+}
+
+// gets the corrdinates for the operation
+func GetCoordinates(svgArray []string) (float64, float64, float64, float64) {
+	hor := svgArray[3]
+	vert := svgArray[5]
+
+	xstart, err := strconv.ParseInt(svgArray[1], 0, 32)
+	HandleError(err)
+	xend := int64(0)
+	ystart, err :=  strconv.ParseInt(svgArray[2], 0, 32)
+	HandleError(err)
+	yend := int64(0)
+
+	if hor == "H" && vert == "V"{
+		hendstr := svgArray[4]
+		hend,err := strconv.ParseInt(hendstr, 0, 32)
+		HandleError(err)
+		xend = hend
+		vendstr := svgArray[6]
+		vend,err := strconv.ParseInt(vendstr, 0, 32)
+		HandleError(err)
+		yend = vend
+
+	} else {
+		if hor == "H"{
+			hendstr := svgArray[4]
+			hend,err := strconv.ParseInt(hendstr, 0, 32)
+			HandleError(err)
+			xend = hend
+			yend = -1
+		} else {
+			if hor == "V"{
+				vendstr := svgArray[4]
+			    vend,err := strconv.ParseInt(vendstr, 0, 32)
+			    HandleError(err)
+			    yend = vend
+			    xend = -1
+			}
+		}
+	}
+
+	// then we know its a line
+	hendstr := svgArray[4]
+	hend,err := strconv.ParseInt(hendstr, 0, 32)
+	HandleError(err)
+	xend = hend
+
+	vendstr := svgArray[5]
+	vend,err := strconv.ParseInt(vendstr, 0, 32)
+	HandleError(err)
+	yend = vend
+
+	return float64(xstart), float64(xend), float64(ystart), float64(yend)
 }
 
 func CalcInkUsed(svgArray []string) int64 {
