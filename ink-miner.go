@@ -89,7 +89,7 @@ type LongestBlockChain struct {
 }
 
 // Keeps track of all the keys & Miner Address so miner can send it to other miners.
-var privKey ecdsa.PrivateKey
+var privKey *ecdsa.PrivateKey
 var pubKey ecdsa.PublicKey
 
 var minerAddr net.Addr
@@ -328,8 +328,8 @@ func FindLastBlockOfLongestChain() []*Block {
 	return lastBlocks
 }
 
-func FindBlockChainPath(block *Block) []Block {
-	tempBlock := *block
+func FindBlockChainPath(block Block) []Block {
+	tempBlock := block
 	path := []Block{}
 
 	for i := block.PathLength; i > 1; i-- {
