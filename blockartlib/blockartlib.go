@@ -34,9 +34,10 @@ const (
 
 type Operation struct {
 	ShapeType     int
-	OPSignature   string
+	UniqueID   string
 	ArtNodePubKey ecdsa.PublicKey
-	OPSig 		OpSig
+	OPSigR 	  *big.Int		
+	OPSigS    *big.Int
 
 	//Adding some new fields that could come in handy trying to validate
 	OpInkCost uint32
