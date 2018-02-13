@@ -74,6 +74,10 @@ type Operation struct {
 	//Adding some new fields that could come in handy trying to validate
 	OpInkCost uint32
 	OpType    string
+  	x-start	  float64	
+  	x-end     float64
+  	y-start   float64
+  	y-end     float64
 }
 
 type LongestBlockChain struct {
