@@ -48,11 +48,6 @@ type Operation struct {
   	yend     float64
 }
 
-type OpSig struct {
-	r *big.Int
-	s *big.Int
-}
-
 var canvasSettings CanvasSettings
 
 // Settings for a canvas in BlockArt.
@@ -345,12 +340,12 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	r, s, _ := ecdsa.Sign(rand.Reader, &nodePrivKey, []byte("This is the Private Key."))
 
-	shapeHash = r.String()
+	shapeHash = r.String() + s.String()
 
 	// shape hash will only take on unique value for r, but for op-sig validation we should pass
 	// in r and s but we will only need to look at r values for shapeHash validation?
 	//
-	err = canvasObj.MinerCli.Call("ArtKey.ReceiveOperation", Operation{OPSignature: shapeHash, OpInkCost: inkReq, OPSig: OpSig{r, s}, }, &reply)
+	err = canvasObj.MinerCli.Call("ArtKey.ReceiveOperation", Operation{UniqueID: shapeHash, OpInkCost: inkReq, OPSigR: r, OPSigS: s }, &reply)
 	if err != nil {
 		return "", "", inkRemaining, DisconnectedError(address)
 	}
@@ -359,7 +354,6 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	return shapeHash, blockHash, inkRemaining, err
 }
-
 
 func (canvasObj CanvasObj) GetSvgString(shapeHash string) (svgString string, err error) {
 	return svgString, err
