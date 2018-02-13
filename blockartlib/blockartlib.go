@@ -351,7 +351,7 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 	// shape hash will only take on unique value for r, but for op-sig validation we should pass
 	// in r and s but we will only need to look at r values for shapeHash validation?
 	//
-	err = canvasObj.MinerCli.Call("ArtKey.ReceiveOperation", Operation{OPSignature: shapeHash, OpInkCost: inkReq, OPSig: OpSig{r, s}}, &reply)
+	err = canvasObj.MinerCli.Call("ArtKey.AddKey", Operation{OPSignature: shapeHash, OpInkCost: inkReq, OPSig: OpSig{r, s}}, &reply)
 	if err != nil {
 		return "", "", inkRemaining, DisconnectedError(address)
 	}

@@ -101,7 +101,7 @@ var connectedMiners = make(map[string]Miner)
 // Keeps track of all blocks generated
 var blockList = []Block{}
 
-// Array of incoming operations
+// Queue of incoming operations
 var operations = []Operation{}
 
 // Operations that are seen already (consists of unique shape hash)
@@ -181,11 +181,31 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain *LongestBloc
 	return err
 }
 
+// Miner receives operation from other miner in the network and will add it into the Operations History Array & Operations Queue
 func (minerKey *MinerKey) ReceiveOperation(operation *Operation, reply *string) error {
 	exists := false
 	for i := 0; i < len(operationsHistory); i++ {
-		if 
+
+		if operation.UniqueID == operationsHistory[i] {
+			exists = true
+		}
 	}
+
+	if exists == false {
+		operationsHistory = append(operationsHistory, operation.UniqueID)
+		operations = append(operations, operation)
+
+		for key, miner := range connectedMiners {
+
+			err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, reply)
+
+			if err != nil {
+				delete(connectedMiners, key)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (artkey *ArtKey) ValidateKey(artNodeKey *blockartlib.ArtNodeKey, canvasSettings *blockartlib.CanvasSettings) error {
@@ -402,6 +422,10 @@ func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 
 // Floods the network of miners with Operations
 func SendOperation(operation Operation) {
+
+	operationsHistory = append(operationsHistory, operation.UniqueID)
+	operations = append(operations, operation)
+
 	reply := ""
 
 	for key, miner := range connectedMiners {
