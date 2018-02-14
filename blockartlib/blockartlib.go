@@ -48,6 +48,7 @@ type Operation struct {
 	OpType         string
 	Lines          []Line
 	DeleteUniqueID string
+	PathShape      string
 }
 
 var canvasSettings CanvasSettings
@@ -358,6 +359,8 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	//set the coordinates
 
+	pathShape := ConstructSvgString(shapeType, shapeSvgString, fill, stroke)
+
 	linesToDraw := GetCoordinates(svgArray)
 
 	err = canvasObj.MinerCli.Call("ArtKey.AddShape", Operation{
@@ -372,6 +375,7 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 		Fill:           fill,
 		Stroke:         stroke,
 		Lines:          linesToDraw,
+		PathShape:      pathShape,
 	}, &reply)
 	if err != nil {
 		return "", "", inkRemaining, DisconnectedError(address)

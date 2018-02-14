@@ -85,6 +85,17 @@ type Operation struct {
 	OpType         string
 	Lines          []Line
 	DeleteUniqueID string
+	PathShape      string
+}
+
+type Line struct {
+	start Point
+	end   Point
+}
+
+type Point struct {
+	x float64
+	y float64
 }
 
 type LongestBlockChain struct {
@@ -311,7 +322,7 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 func SelectValidBranch(endBlocks []*Block, newBlock Block) *Block {
 	var validEndBlocks []*Block
 	for _, block := range endBlocks {
-		currPath := FindBlockChainPath(block)
+		currPath := FindBlockChainPath(*block)
 		for _, op := range newBlock.SetOPs {
 			err := ValidateOperationForLongestChain(op, currPath)
 		}
@@ -337,33 +348,41 @@ func SelectRandomBranch(endBlocks []*Block) *Block {
 	return endBlocks[randIndex]
 }
 
-// Checks for any possible intersection between set of operations and operations in
+// Checks for any possible intersection between one operation and the operations in
 // the longest block chain
 func CheckIntersection(operation Operation) bool {
-	deletes := []Operation{}
 	blockChain := FindLongestBlockChain()
-	point1 := Point{x: operation.xStart, y: operation.yStart}
-	point2 := Point{x: operation.xEnd, y: operation.yEnd}
-	for k := len(blockChain); k > 0; k-- {
-		for _, op := range blockChain[k].SetOPs {
-			point3 := Point{x: op.xStart, y: op.yStart}
-			point4 := Point{x: op.xEnd, y: op.yEnd}
-			if CheckIntersectionLines(point1, point2, point3, point4) {
-				if op.OpType == "Add" {
-					exists := false
-					for i, delOp := range deletes {
-						if delOp.xStart == op.xStart && delOp.xEnd == op.xEnd &&
-							delOp.xEnd == op.xEnd && delOp.yEnd == op.yEnd {
-							deletes = append(deletes[:i], deletes[i+1:]...)
-							exists = true
-							break
+	for _, line := range operation.Lines {
+		deletes := []Operation{}
+		start := line.start
+		end := line.end
+		point1 := Point{x: start.x, y: start.y}
+		point2 := Point{x: end.x, y: end.y}
+		for k := len(blockChain) - 1; k > 0; k-- {
+			for _, op := range blockChain[k].SetOPs {
+				for _, opLine := range op.Lines {
+					opStart := opLine.start
+					opEnd := opLine.end
+					point3 := Point{x: opStart.x, y: opStart.y}
+					point4 := Point{x: opEnd.x, y: opEnd.y}
+					if CheckIntersectionLines(point1, point2, point3, point4) {
+						if op.OpType == "Add" {
+							exists := false
+							for i, delOp := range deletes {
+								if delOp.DeleteUniqueID == operation.UniqueID {
+									deletes = append(deletes[:i], deletes[i+1:]...)
+									exists = true
+									break
+								}
+							}
+							if !exists {
+								return false
+							}
+						} else {
+							deletes = append(deletes, op)
 						}
+						break
 					}
-					if !exists {
-						return false
-					}
-				} else {
-					deletes = append(deletes, op)
 				}
 			}
 		}
@@ -404,13 +423,12 @@ func Orientation(c1 Point, c2 Point, c3 Point) int {
 
 func FindLongestBlockChain() []Block {
 	endNodes := FindLastBlockOfLongestChain()
+
 	if len(endNodes) > 1 {
-		// TODO : for edge case when multiple longest branches are present
-		// we will select at random for now
 		randNode := SelectRandomBranch(endNodes)
-		return FindBlockChainPath(randNode)
+		return FindBlockChainPath(*randNode)
 	}
-	return FindBlockChainPath(endNodes[0])
+	return FindBlockChainPath(*endNodes[0])
 }
 
 func FindLastBlockOfLongestChain() []*Block {
