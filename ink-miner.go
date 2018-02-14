@@ -11,6 +11,8 @@ pubKey + privKey: key pair to validate connecting art nodes
 package main
 
 import (
+	"reflect"
+
 	"./blockartlib"
 
 	"crypto/ecdsa"
@@ -86,6 +88,7 @@ type Operation struct {
 	xEnd           float64
 	yStart         float64
 	yEnd           float64
+	DeleteUniqueID string
 }
 
 type LongestBlockChain struct {
@@ -235,7 +238,7 @@ func (artkey *ArtKey) AddShape(operation *Operation, reply *bool) error {
 
 func (artkey *ArtKey) GetInk(_ *struct{}, inkAmount *uint32) error {
 	for i := len(longestBlockChain) - 1; i >= 0; i-- {
-		if IsPublicKeySame(blockList[i].MinerPubKey) {
+		if reflect.DeepEqual(blockList[i].MinerPubKey, pubKey) {
 			*inkAmount = blockList[i].TotalInkAmount
 			break
 		}
@@ -246,7 +249,7 @@ func (artkey *ArtKey) GetInk(_ *struct{}, inkAmount *uint32) error {
 func GetInkAmount(prevBlock *Block) uint32 {
 	temp := *prevBlock
 	for i := prevBlock.PathLength; i > 1; i-- {
-		if IsPublicKeySame(temp.MinerPubKey) {
+		if reflect.DeepEqual(temp.MinerPubKey, pubKey) {
 			return temp.TotalInkAmount
 			break
 		}
@@ -619,6 +622,8 @@ func CheckPreviousBlock(hash string) (*Block, bool) {
 // call this for op-blocks to validate the op-block
 func ValidateOperation(operation Operation) error {
 
+	longestChain := FindLongestBlockChain()
+
 	// made a dummy private key but it should correspond to blockartlib shape added?
 	// need clarification from you guys
 	// Check that each operation in the block has a valid signature
@@ -629,38 +634,46 @@ func ValidateOperation(operation Operation) error {
 		return errors.New("failed to validate operation signature")
 	}
 
+	// Checks for DeleteShape
 	if operation.OpType == "Delete" {
-		for _, doneOp := range operationsHistory {
-			if operation.UniqueID == doneOp {
-				fmt.Println("Delete operation validation sucess, shape to be deleted exists")
-			} else {
-				return errors.New("Delete operation could not find a shape previously added")
+
+		DeleteConfirmed := false
+		for i := len(longestChain); i > 1; i-- {
+
+			for m := 0; m < len(longestChain[m].SetOPs); m++ {
+				if operation.DeleteUniqueID == longestChain[j].SetOPs[m].UniqueID {
+					DeleteConfirmed = true
+				}
 			}
+		}
+
+		if DeleteConfirmed == false {
+			return blockartlib.ShapeOverlapError(operation.DeleteUniqueID)
 		}
 	}
 
+	// Checks for AddShape
 	if operation.OpType == "Add" {
-		for _, doneOp := range operationsHistory {
-			if operation.UniqueID == doneOp {
-				return errors.New("Duplicate add operation of same shape")
-			} else {
-				fmt.Println("identical signature could not be found, add shape validation sucess")
+		// Validates the operation against duplicate signatures (UniqueID)
+		for j := len(longestChain); j > 1; j-- {
+
+			for k := 0; k < len(longestChain[j].SetOPs); k++ {
+
+				if operation.UniqueID == longestChain[j].SetOPs[k].UniqueID {
+					return blockartlib.ShapeOverlapError(longestChain[j].SetOPs[k].UniqueID)
+				}
 			}
 		}
-	}
 
-	// checking ink amount
-	for _, block := range blockList {
-		if block.MinerPubKey == operation.ArtNodePubKey {
-			minerCurrentInk := GetInkAmount(&block)
-			minerCurrentInk = minerCurrentInk - operation.OpInkCost
-			if minerCurrentInk < 0 {
-				return errors.New("the total operation cost exceeds ink-miner supply")
-			} else {
-				continue
+		// Validates the operation against the Ink Amount Check
+		for l := len(longestChain); l > 1; l-- {
+
+			if reflect.DeepEqual(longestChain[l].MinerPubKey, operation.ArtNodePubKey) {
+
+				if longestChain[l].InkBank-operation.OpInkCost < 0 {
+					return blockartlib.InsufficientInkError(operation.OpInkCost)
+				}
 			}
-		} else {
-			return errors.New("ArtNodePubKey's associated MinerPubKey could not be found")
 		}
 	}
 	return nil

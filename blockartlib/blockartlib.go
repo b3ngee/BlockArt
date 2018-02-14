@@ -352,7 +352,7 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	x, xe, y, ye := GetCoordinates(svgArray)
 
-	err = canvasObj.MinerCli.Call("ArtKey.AddKey", Operation{
+	err = canvasObj.MinerCli.Call("ArtKey.AddShape", Operation{
 		UniqueID:       shapeHash,
 		OpInkCost:      inkReq,
 		OPSigR:         r,
