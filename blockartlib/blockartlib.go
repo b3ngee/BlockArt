@@ -50,6 +50,7 @@ type Operation struct {
 	xEnd           float64
 	yStart         float64
 	yEnd           float64
+	DeleteUniqueID string
 }
 
 var canvasSettings CanvasSettings
