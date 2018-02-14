@@ -47,6 +47,7 @@ type Operation struct {
 	OpInkCost      uint32
 	OpType         string
 	Lines          []Line
+	DeleteUniqueID string
 }
 
 var canvasSettings CanvasSettings
@@ -588,6 +589,12 @@ func CalcInkUsed(svgArray []string) int64 {
 	rootDis := int64(math.Sqrt(distance))
 
 	return rootDis
+
+}
+
+// TODO:
+// CHECK TO SEE IF THE SVGSTRING IS VALID OR NOT
+func HandleInvalidSVGString(svgArray []string) bool {
 
 }
 

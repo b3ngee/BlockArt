@@ -11,6 +11,8 @@ pubKey + privKey: key pair to validate connecting art nodes
 package main
 
 import (
+	"reflect"
+
 	"./blockartlib"
 
 	"crypto/ecdsa"
@@ -22,7 +24,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	mrand "math/rand"
 	"net"
@@ -83,6 +84,7 @@ type Operation struct {
 	OpInkCost      uint32
 	OpType         string
 	Lines          []Line
+	DeleteUniqueID string
 }
 
 type LongestBlockChain struct {
@@ -227,7 +229,7 @@ func (artkey *ArtKey) AddShape(operation *Operation, reply *bool) error {
 
 func (artkey *ArtKey) GetInk(_ *struct{}, inkAmount *uint32) error {
 	for i := len(longestBlockChain) - 1; i >= 0; i-- {
-		if IsPublicKeySame(blockList[i].MinerPubKey) {
+		if reflect.DeepEqual(blockList[i].MinerPubKey, pubKey) {
 			*inkAmount = blockList[i].TotalInkAmount
 			break
 		}
@@ -238,7 +240,7 @@ func (artkey *ArtKey) GetInk(_ *struct{}, inkAmount *uint32) error {
 func GetInkAmount(prevBlock *Block) uint32 {
 	temp := *prevBlock
 	for i := prevBlock.PathLength; i > 1; i-- {
-		if IsPublicKeySame(temp.MinerPubKey) {
+		if reflect.DeepEqual(temp.MinerPubKey, pubKey) {
 			return temp.TotalInkAmount
 			break
 		}
@@ -310,8 +312,10 @@ func SelectValidBranch(endBlocks []*Block, newBlock Block) *Block {
 	var validEndBlocks []*Block
 	for _, block := range endBlocks {
 		currPath := FindBlockChainPath(block)
-		isValid := ValidateOperationAgainstPath(newBlock.SetOPs, currPath)
-		if isValid {
+		for _, op := range newBlock.SetOPs {
+			err := ValidateOperationForLongestChain(op, currPath)
+		}
+		if err == nil {
 			validEndBlocks = append(validEndBlocks, block)
 		}
 	}
@@ -322,12 +326,6 @@ func SelectValidBranch(endBlocks []*Block, newBlock Block) *Block {
 		return validEndBlocks[0]
 	}
 	return nil
-}
-
-// Checks if given branch causes any validation error for given set of operations
-func ValidateOperationAgainstPath(ops []Operation, block []Block) bool {
-	// TODO
-	return true
 }
 
 // Selects random node in the given array
@@ -385,18 +383,6 @@ func CheckIntersectionLines(p1 Point, p2 Point, p3 Point, p4 Point) bool {
 		return true
 	}
 
-	if o1 == 0 && OnSegment(p1, p3, p2) {
-		return true
-	}
-	if o2 == 0 && OnSegment(p1, p4, p2) {
-		return true
-	}
-	if o3 == 0 && OnSegment(p3, p1, p4) {
-		return true
-	}
-	if o4 == 0 && OnSegment(p3, p2, p4) {
-		return true
-	}
 	return false
 }
 
@@ -414,15 +400,6 @@ func Orientation(c1 Point, c2 Point, c3 Point) int {
 	} else {
 		return 2
 	}
-}
-
-// Checks if point c2 lies on the line segment between c1 and c3
-func OnSegment(c1 Point, c2 Point, c3 Point) bool {
-	if c2.x <= math.Max(c1.x, c3.x) && c2.x >= math.Min(c1.x, c3.x) &&
-		c2.y <= math.Max(c1.y, c3.y) && c2.y >= math.Min(c1.y, c3.y) {
-		return true
-	}
-	return false
 }
 
 func FindLongestBlockChain() []Block {
@@ -609,7 +586,7 @@ func CheckPreviousBlock(hash string) (*Block, bool) {
 }
 
 // call this for op-blocks to validate the op-block
-func ValidateOperation(operation Operation) error {
+func ValidateOperationForLongestChain(operation Operation, longestChain []Block) error {
 
 	// made a dummy private key but it should correspond to blockartlib shape added?
 	// need clarification from you guys
@@ -621,38 +598,106 @@ func ValidateOperation(operation Operation) error {
 		return errors.New("failed to validate operation signature")
 	}
 
+	// Checks for DeleteShape
 	if operation.OpType == "Delete" {
-		for _, doneOp := range operationsHistory {
-			if operation.UniqueID == doneOp {
-				fmt.Println("Delete operation validation sucess, shape to be deleted exists")
-			} else {
-				return errors.New("Delete operation could not find a shape previously added")
+
+		DeleteConfirmed := false
+		for i := len(longestChain); i > 1; i-- {
+
+			for m := 0; m < len(longestChain[m].SetOPs); m++ {
+				if operation.DeleteUniqueID == longestChain[j].SetOPs[m].UniqueID {
+					DeleteConfirmed = true
+				}
 			}
+		}
+
+		if DeleteConfirmed == false {
+			return blockartlib.ShapeOverlapError(operation.DeleteUniqueID)
 		}
 	}
 
+	// Checks for AddShape
 	if operation.OpType == "Add" {
-		for _, doneOp := range operationsHistory {
-			if operation.UniqueID == doneOp {
-				return errors.New("Duplicate add operation of same shape")
-			} else {
-				fmt.Println("identical signature could not be found, add shape validation sucess")
+		// Validates the operation against duplicate signatures (UniqueID)
+		for j := len(longestChain); j > 1; j-- {
+
+			for k := 0; k < len(longestChain[j].SetOPs); k++ {
+
+				if operation.UniqueID == longestChain[j].SetOPs[k].UniqueID {
+					return blockartlib.ShapeOverlapError(longestChain[j].SetOPs[k].UniqueID)
+				}
+			}
+		}
+
+		// Validates the operation against the Ink Amount Check
+		for l := len(longestChain); l > 1; l-- {
+
+			if reflect.DeepEqual(longestChain[l].MinerPubKey, operation.ArtNodePubKey) {
+
+				if longestChain[l].InkBank-operation.OpInkCost < 0 {
+					return blockartlib.InsufficientInkError(operation.OpInkCost)
+				}
 			}
 		}
 	}
+	return nil
+}
 
-	// checking ink amount
-	for _, block := range blockList {
-		if block.MinerPubKey == operation.ArtNodePubKey {
-			minerCurrentInk := GetInkAmount(&block)
-			minerCurrentInk = minerCurrentInk - operation.OpInkCost
-			if minerCurrentInk < 0 {
-				return errors.New("the total operation cost exceeds ink-miner supply")
-			} else {
-				continue
+// call this for op-blocks to validate the op-block
+func ValidateOperation(operation Operation) error {
+
+	longestChain := FindLongestBlockChain()
+
+	// made a dummy private key but it should correspond to blockartlib shape added?
+	// need clarification from you guys
+	// Check that each operation in the block has a valid signature
+
+	if ecdsa.Verify(&operation.ArtNodePubKey, []byte(GlobalHash), operation.OPSigR, operation.OPSigS) {
+		fmt.Println("op-sig is valid .... continuing validation")
+	} else {
+		return errors.New("failed to validate operation signature")
+	}
+
+	// Checks for DeleteShape
+	if operation.OpType == "Delete" {
+
+		DeleteConfirmed := false
+		for i := len(longestChain); i > 1; i-- {
+
+			for m := 0; m < len(longestChain[m].SetOPs); m++ {
+				if operation.DeleteUniqueID == longestChain[j].SetOPs[m].UniqueID {
+					DeleteConfirmed = true
+				}
 			}
-		} else {
-			return errors.New("ArtNodePubKey's associated MinerPubKey could not be found")
+		}
+
+		if DeleteConfirmed == false {
+			return blockartlib.ShapeOverlapError(operation.DeleteUniqueID)
+		}
+	}
+
+	// Checks for AddShape
+	if operation.OpType == "Add" {
+		// Validates the operation against duplicate signatures (UniqueID)
+		for j := len(longestChain); j > 1; j-- {
+
+			for k := 0; k < len(longestChain[j].SetOPs); k++ {
+
+				if operation.UniqueID == longestChain[j].SetOPs[k].UniqueID {
+					return blockartlib.ShapeOverlapError(longestChain[j].SetOPs[k].UniqueID)
+				}
+			}
+		}
+
+		// Validates the operation against the Ink Amount Check
+		for l := len(longestChain); l > 1; l-- {
+
+			if reflect.DeepEqual(longestChain[l].MinerPubKey, operation.ArtNodePubKey) {
+
+				if longestChain[l].InkBank-operation.OpInkCost < 0 {
+					return blockartlib.InsufficientInkError(operation.OpInkCost)
+				}
+			}
 		}
 	}
 	return nil
@@ -711,7 +756,7 @@ func ComputeBlockHash(block Block) string {
 	// this states if it is an op block (has set of OPs) or not
 	if len(block.SetOPs) > 0 {
 		for i := 0; i < len(block.SetOPs); i++ {
-			hash = hash + string(block.SetOPs[i].ShapeType) + block.SetOPs[i].OPSignature
+			hash = hash + string(block.SetOPs[i].ShapeType) + block.SetOPs[i].UniqueID
 		}
 	}
 	minerPubKey, _ := json.Marshal(block.MinerPubKey)
@@ -750,8 +795,14 @@ func GetMaxValidateNum(operations []Operation) int {
 }
 
 // Checks whether or not operations are validated or not (check validateNum against the block)
-func CheckOperationValidation(uniqueID string) {
+func CheckOperationValidation(uniqueID string) bool {
+	timeOut := 0
 	for {
+		// Times out, sends reply back (3 mins currently)
+		if timeOut == 36 {
+			return false
+		}
+
 		// blockToCheck is the block that contains the checked Operation
 		blockToCheck := Block{}
 		opToCheck := Operation{}
@@ -792,7 +843,7 @@ func CheckOperationValidation(uniqueID string) {
 		if endBlock.Hash != "" {
 			// Stop the infinite for loop when we find something to send back to the Art Node
 			if endBlock.PathLength-blockToCheck.PathLength >= opToCheck.ValidateNum {
-				break
+				return true
 			}
 		}
 
