@@ -225,7 +225,7 @@ func (minerKey *MinerKey) ReceiveOperation(operation *Operation, reply *string) 
 }
 
 // Gets all the PATH shape from the longest blockchain
-func (artkey *ArtKey) GetAllPATHShape(_ *struct{}, paths *[]string) error {
+func (artkey *ArtKey) GetAllPATHShape("", paths *[]string) error {
 
 	// String of all the DeleteUniqueIDs
 	deletedShapes := make([]string, 0)
@@ -278,7 +278,7 @@ func (artkey *ArtKey) AddShape(operation *Operation, reply *bool) error {
 	return nil
 }
 
-func (artkey *ArtKey) GetInk(_ *struct{}, inkAmount *uint32) error {
+func (artkey *ArtKey) GetInk(empty string, inkAmount *uint32) error {
 	LongestBlockChain := FindLongestBlockChain()
 	for i := len(longestBlockChain) - 1; i >= 0; i-- {
 		if reflect.DeepEqual(blockList[i].MinerPubKey, pubKey) {

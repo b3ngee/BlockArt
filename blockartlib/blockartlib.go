@@ -286,7 +286,16 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 // Closes the canvas/connection to the BlockArt network.
 // - DisconnectedError
 func (canvasObj CanvasObj) CloseCanvas() (inkRemaining uint32, err error) {
-	return inkRemaining, err
+	var reply uint32
+
+	err = canvasObj.MinerCli.Call("ArtKey.GetInk", "", &reply)
+	if err != nil {
+		return uint32(0), DisconnectedError(canvasObj.MinerAddress)
+	}
+
+	canvasObj.MinerCli.Close()
+
+	return reply, err
 }
 
 // Retrieves the children blocks of the block identified by blockHash.
@@ -427,8 +436,12 @@ func (canvasObj CanvasObj) GetSvgString(shapeHash string) (svgString string, err
 // Can return the following errors:
 // - DisconnectedError
 func (canvasObj CanvasObj) GetInk() (inkRemaining uint32, err error) {
-
-	return inkRemaining, err
+	var reply uint32
+	err = canvasObj.MinerCli.Call("ArtKey.GetInk", "", &reply)
+	if err != nil {
+		return uint32(0), DisconnectedError(canvasObj.MinerAddress)
+	}
+	return reply, err
 }
 
 // Removes a shape from the canvas.
@@ -457,6 +470,8 @@ func (canvasObj CanvasObj) GetShapes(blockHash string) (shapeHashes []string, er
 	return shapeHashes, nil
 }
 
+///////////////////////////////// HELPER FUNCTIONS BELOW
+
 // Retrieves all the PATH shapes from Ink Miner's local longest blockchain and creates an HTML file of the Canvas
 func CreateCanvasHTML(paths []string, cSettings CanvasSettings) {
 
@@ -471,10 +486,7 @@ func CreateCanvasHTML(paths []string, cSettings CanvasSettings) {
 	svgPath = svgPath + "</svg>"
 
 	f.Write([]byte(svgPath))
-
 }
-
-///////////////////////////////// HELPER FUNCTIONS BELOW
 
 func ConstructSvgString(shapeType ShapeType, svgString string, fill string, stroke string) string {
 	// <path d="M 0 0 L 20 20" stroke="red" fill="transparent"/>
