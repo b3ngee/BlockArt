@@ -198,22 +198,21 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain *LongestBloc
 }
 
 // Miner receives operation from other miner in the network and will add it into the Operations History Array & Operations Queue
-func (minerKey *MinerKey) ReceiveOperation(operation *Operation, reply *string) error {
+func (minerKey *MinerKey) ReceiveOperation(operation Operation, reply *bool) error {
 	exists := false
 	for i := 0; i < len(operationsHistory); i++ {
-
 		if operation.UniqueID == operationsHistory[i] {
 			exists = true
+			break
 		}
 	}
 
 	if exists == false {
 		operationsHistory = append(operationsHistory, operation.UniqueID)
-		operations = append(operations, *operation)
+		operations = append(operations, operation)
 
 		for key, miner := range connectedMiners {
-
-			err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, reply)
+			err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
 
 			if err != nil {
 				delete(connectedMiners, key)
@@ -273,9 +272,26 @@ func (artkey *ArtKey) ValidateKey(artNodeKey *blockartlib.ArtNodeKey, canvasSett
 	return nil
 }
 
-func (artkey *ArtKey) AddShape(operation *Operation, reply *bool) error {
+func (artkey *ArtKey) AddShape(operation Operation, reply *bool) error {
+	longestBlockChain := FindLongestBlockChain()
 
-	return nil
+	err := ValidateOperationForLongestChain(operation, longestBlockChain)
+	if err != nil {
+		return err
+	}
+
+	operationsHistory = append(operationsHistory, operation.UniqueID)
+	operations = append(operations, operation)
+
+	// Floods the network of miners with Operations
+	for key, miner := range connectedMiners {
+
+		err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
+
+		if err != nil {
+			delete(connectedMiners, key)
+		}
+	}
 }
 
 func (artkey *ArtKey) GetInk(empty string, inkAmount *uint32) error {
@@ -365,7 +381,7 @@ func SelectValidBranch(endBlocks []*Block, newBlock Block) *Block {
 	for _, block := range endBlocks {
 		currPath := FindBlockChainPath(*block)
 		for _, op := range newBlock.SetOPs {
-			err := ValidateOperationForLongestChain(op, currPath)
+			err = ValidateOperationForLongestChain(op, currPath)
 		}
 		if err == nil {
 			validEndBlocks = append(validEndBlocks, block)
@@ -588,25 +604,6 @@ func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 	return err
 }
 
-// Floods the network of miners with Operations
-func SendOperation(operation Operation) {
-
-	operationsHistory = append(operationsHistory, operation.UniqueID)
-	operations = append(operations, operation)
-
-	reply := ""
-
-	for key, miner := range connectedMiners {
-
-		err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, reply)
-
-		if err != nil {
-			delete(connectedMiners, key)
-		}
-
-	}
-}
-
 func ExistInLocalBlockchain(blockHash string) bool {
 	for _, block := range blockList {
 		if blockHash == block.Hash {
@@ -651,7 +648,7 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 	// need clarification from you guys
 	// Check that each operation in the block has a valid signature
 
-	if ecdsa.Verify(&operation.ArtNodePubKey, []byte(GlobalHash), operation.OPSigR, operation.OPSigS) {
+	if ecdsa.Verify(&operation.ArtNodePubKey, []byte("This is private key"), operation.OPSigR, operation.OPSigS) {
 		fmt.Println("op-sig is valid .... continuing validation")
 	} else {
 		return errors.New("failed to validate operation signature")
@@ -664,7 +661,7 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 		for i := len(longestChain); i > 1; i-- {
 
 			for m := 0; m < len(longestChain[m].SetOPs); m++ {
-				if operation.DeleteUniqueID == longestChain[j].SetOPs[m].UniqueID {
+				if operation.DeleteUniqueID == longestChain[i].SetOPs[m].UniqueID {
 					DeleteConfirmed = true
 				}
 			}
@@ -699,10 +696,12 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 			}
 		}
 	}
+
 	return nil
 }
 
 // call this for op-blocks to validate the op-block
+// TODO: DELETE THIS ONE IT'S THE EXACT SAME AS ValidateOperationForLongestChain JUST COMPUTE LONGESTCHAIN AND PASS IN
 func ValidateOperation(operation Operation) error {
 
 	longestChain := FindLongestBlockChain()
@@ -711,7 +710,7 @@ func ValidateOperation(operation Operation) error {
 	// need clarification from you guys
 	// Check that each operation in the block has a valid signature
 
-	if ecdsa.Verify(&operation.ArtNodePubKey, []byte(GlobalHash), operation.OPSigR, operation.OPSigS) {
+	if ecdsa.Verify(&operation.ArtNodePubKey, []byte("This is private key"), operation.OPSigR, operation.OPSigS) {
 		fmt.Println("op-sig is valid .... continuing validation")
 	} else {
 		return errors.New("failed to validate operation signature")
@@ -724,7 +723,7 @@ func ValidateOperation(operation Operation) error {
 		for i := len(longestChain); i > 1; i-- {
 
 			for m := 0; m < len(longestChain[m].SetOPs); m++ {
-				if operation.DeleteUniqueID == longestChain[j].SetOPs[m].UniqueID {
+				if operation.DeleteUniqueID == longestChain[i].SetOPs[m].UniqueID {
 					DeleteConfirmed = true
 				}
 			}
@@ -910,20 +909,6 @@ func CheckOperationValidation(uniqueID string) bool {
 	}
 }
 
-// Used to compare public keys
-func IsPublicKeySame(incomingPubKey ecdsa.PublicKey) bool {
-	data := []byte("This is private key")
-	r, s, _ := ecdsa.Sign(rand.Reader, &privKey, data)
-
-	if ecdsa.Verify(&incomingPubKey, data, r, s) {
-		fmt.Println("This is the same")
-		return true
-	}
-
-	fmt.Println("This is not the same")
-	return false
-}
-
 func (artkey *ArtKey) GetChildren(blockHash string, children *[]string) error {
 	hashExists := false
 	result := []string{}
@@ -970,10 +955,14 @@ func (artkey *ArtKey) GetShapes(blockHash string, shapeHashes *[]string) error {
 }
 
 func (artKey *ArtKey) GetOperationWithShapeHash(shapeHash string, operation *Operation) error {
-	for _, op := range operationsHistory {
-		if op.UniqueID == shapeHash {
-			*operation = op
-			return nil
+	longestBlockChain := FindLongestBlockChain()
+
+	for _, block := range longestBlockChain {
+		for _, op := range block.SetOPs {
+			if op.UniqueID == shapeHash {
+				*operation = op
+				return nil
+			}
 		}
 	}
 	*operation = Operation{}
