@@ -623,7 +623,6 @@ func CalcInkUsed(svgArray []string) int64 {
 	rootDis := int64(math.Sqrt(distance))
 
 	return rootDis
-
 }
 
 func checkValidFillAndStroke(fill string, stroke string) bool {
