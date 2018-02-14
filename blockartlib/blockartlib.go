@@ -552,6 +552,15 @@ func CalcInkUsed(svgArray []string) int64 {
 
 }
 
+
+// TODO:
+// CHECK TO SEE IF THE SVGSTRING IS VALID OR NOT
+func HandleInvalidSVGString(svgArray []string) bool {
+
+
+}
+
+
 // checks the boundary settings for the position of shape, EX "M 0 10 H 20" checks 0 and 10
 func BoundCheck(svgArray []string) bool {
 
