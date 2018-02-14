@@ -337,7 +337,9 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	// - OutOfBoundsError
 	svgArray := strings.Split(shapeSvgString, " ")
-	if !BoundCheck(svgArray) {
+	boundCheck := GetCoordinates(svgArray)
+
+	if !BoundCheck(boundCheck) {
 		boundsErr := OutOfBoundsError{}
 		return "", "", inkRemaining, OutOfBoundsError(boundsErr)
 	}
@@ -599,78 +601,44 @@ func HandleInvalidSVGString(svgArray []string) bool {
 }
 
 // checks the boundary settings for the position of shape, EX "M 0 10 H 20" checks 0 and 10
-func BoundCheck(svgArray []string) bool {
+func BoundCheck(lines []Line) bool {
 
-	xInt := svgArray[1]
-	yInt := svgArray[2]
-	fill := svgArray[3]
-
-	x, err := strconv.ParseInt(xInt, 0, 32)
-	HandleError(err)
-	y, err := strconv.ParseInt(yInt, 0, 32)
-	HandleError(err)
-
-	if x < 0 {
-		return false
-	}
-	if y < 0 {
-		return false
-	}
-	if x > int64(canvasSettings.CanvasXMax) {
-		return false
-	}
-	if y > int64(canvasSettings.CanvasYMax) {
-		return false
-	}
-
-	if fill == "H" {
-		hDis := svgArray[4]
-		xDis, err := strconv.ParseInt(hDis, 0, 32)
-		HandleError(err)
-		xEnd := xDis + x
-		if xEnd > int64(canvasSettings.CanvasXMax) {
+	for i := 0; i < len(lines); i++ {
+		xstart := lines[i].start
+		xspos := xstart.x
+		ystart := lines[i].start
+		yspos := ystart.y
+		xend := lines[i].end
+		xepos := xend.x
+		yend := lines[i].end
+		yepos := yend.y
+	
+		if xspos > float64(canvasSettings.CanvasXMax) {
 			return false
-		} else {
-			moreFill := svgArray[5]
-			if moreFill == "V" {
-				hvDis := svgArray[6]
-				yxDis, err := strconv.ParseInt(hvDis, 0, 32)
-				HandleError(err)
-				yxEnd := yxDis + y
-				if yxEnd > int64(canvasSettings.CanvasYMax) {
-					return false
-				}
-			}
 		}
-	}
-
-	if fill == "V" {
-		vDis := svgArray[4]
-		yDis, err := strconv.ParseInt(vDis, 0, 32)
-		HandleError(err)
-		yEnd := yDis + y
-		if yEnd > int64(canvasSettings.CanvasYMax) {
+		if yspos > float64(canvasSettings.CanvasYMax) {
+			return false
+		}
+		if xepos > float64(canvasSettings.CanvasXMax) {
+			return false
+		}
+		if yepos > float64(canvasSettings.CanvasYMax) {
+			return false
+		}
+		if xspos < float64(0) {
+			return false
+		}
+		if yspos < float64(0) {
+			return false
+		}
+		if xepos < float64(0) {
+			return false
+		}
+		if yepos < float64(0) {
 			return false
 		}
 	}
-
-	if fill == "L" {
-		xline := svgArray[4]
-		yline := svgArray[5]
-		xlend, err := strconv.ParseInt(xline, 0, 32)
-		HandleError(err)
-		ylend, err := strconv.ParseInt(yline, 0, 32)
-		HandleError(err)
-
-		if ylend > int64(canvasSettings.CanvasYMax) {
-			return false
-		}
-		if xlend > int64(canvasSettings.CanvasYMax) {
-			return false
-		}
-	}
-
-	return true
+	return true 
 }
 
 func HandleError(err error) {
