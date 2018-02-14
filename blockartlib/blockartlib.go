@@ -286,10 +286,10 @@ func (canvasObj CanvasObj) GetChildren(blockHash string) (blockHashes []string, 
 	var reply []string
 	err = canvasObj.MinerCli.Call("ArtKey.GetChildren", blockHash, &reply)
 	if err != nil {
+		if err.Error() == "Hash does not exist" {
+			return nil, InvalidBlockHashError(blockHash)
+		}
 		return nil, DisconnectedError(address)
-	}
-	if len(reply) > 0 && reply[0] == "INVALID" {
-		return nil, InvalidBlockHashError(blockHash)
 	}
 
 	return reply, nil
@@ -385,7 +385,17 @@ func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (ink
 // - DisconnectedError
 // - InvalidBlockHashError
 func (canvasObj CanvasObj) GetShapes(blockHash string) (shapeHashes []string, err error) {
-	return shapeHashes, err
+	address := canvasObj.MinerAddress
+
+	err = canvasObj.MinerCli.Call("ArtKey.GetShapes", blockHash, &shapeHashes)
+	if err != nil {
+		if err.Error() == "Invalid shape hash" {
+			return shapeHashes, InvalidBlockHashError(blockHash)
+		}
+		return shapeHashes, DisconnectedError(address)
+	}
+
+	return shapeHashes, nil
 }
 
 ///////////////////////////////// HELPER FUNCTIONS BELOW
@@ -406,46 +416,46 @@ func GetCoordinates(svgArray []string) (float64, float64, float64, float64) {
 	xstart, err := strconv.ParseInt(svgArray[1], 0, 32)
 	HandleError(err)
 	xend := int64(0)
-	ystart, err :=  strconv.ParseInt(svgArray[2], 0, 32)
+	ystart, err := strconv.ParseInt(svgArray[2], 0, 32)
 	HandleError(err)
 	yend := int64(0)
 
-	if hor == "H" && vert == "V"{
+	if hor == "H" && vert == "V" {
 		hendstr := svgArray[4]
-		hend,err := strconv.ParseInt(hendstr, 0, 32)
+		hend, err := strconv.ParseInt(hendstr, 0, 32)
 		HandleError(err)
 		xend = hend
 		vendstr := svgArray[6]
-		vend,err := strconv.ParseInt(vendstr, 0, 32)
+		vend, err := strconv.ParseInt(vendstr, 0, 32)
 		HandleError(err)
 		yend = vend
 
 	} else {
-		if hor == "H"{
+		if hor == "H" {
 			hendstr := svgArray[4]
-			hend,err := strconv.ParseInt(hendstr, 0, 32)
+			hend, err := strconv.ParseInt(hendstr, 0, 32)
 			HandleError(err)
 			xend = hend
 			yend = -1
 		} else {
-			if hor == "V"{
+			if hor == "V" {
 				vendstr := svgArray[4]
-			    vend,err := strconv.ParseInt(vendstr, 0, 32)
-			    HandleError(err)
-			    yend = vend
-			    xend = -1
+				vend, err := strconv.ParseInt(vendstr, 0, 32)
+				HandleError(err)
+				yend = vend
+				xend = -1
 			}
 		}
 	}
 
 	// then we know its a line
 	hendstr := svgArray[4]
-	hend,err := strconv.ParseInt(hendstr, 0, 32)
+	hend, err := strconv.ParseInt(hendstr, 0, 32)
 	HandleError(err)
 	xend = hend
 
 	vendstr := svgArray[5]
-	vend,err := strconv.ParseInt(vendstr, 0, 32)
+	vend, err := strconv.ParseInt(vendstr, 0, 32)
 	HandleError(err)
 	yend = vend
 

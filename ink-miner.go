@@ -834,17 +834,34 @@ func (artkey *ArtKey) GetChildren(blockHash string, children *[]string) error {
 	}
 
 	if !hashExists {
-		result = append(result, "INVALID")
+		return errors.New("Hash does not exist")
 	}
 
 	*children = result
-
 	return nil
 }
 
 func (artkey *ArtKey) GetGenesisBlock(doNotUse string, genesisHash *string) error {
 	*genesisHash = blockList[0].Hash
 	return nil
+}
+
+func (artkey *ArtKey) GetShapes(blockHash string, shapeHashes *[]string) error {
+	result := []string{}
+	for _, block := range blockList {
+		if block.Hash == blockHash {
+			operations := block.SetOPs
+
+			for _, op := range operations {
+				result = append(result, op.UniqueID)
+			}
+
+			*shapeHashes = result
+			return nil
+		}
+	}
+
+	return errors.New("Invalid shape hash")
 }
 
 func main() {
