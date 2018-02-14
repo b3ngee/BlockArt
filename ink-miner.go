@@ -222,6 +222,46 @@ func (minerKey *MinerKey) ReceiveOperation(operation *Operation, reply *string) 
 	return nil
 }
 
+// Gets all the PATH shape from the longest blockchain
+func (artkey *ArtKey) GetAllPATHShape(_ *struct{}, paths *[]string) error {
+
+	// String of all the DeleteUniqueIDs
+	deletedShapes := make([]string, 0)
+
+	// All of the paths that should be returned
+	pathsReturned := make([]string, 0)
+
+	blockChain := FindLongestBlockChain()
+
+	for i := len(blockChain); i > 1; i-- {
+
+		for j := 0; j < len(blockChain[i].SetOPs); j++ {
+
+			// If OpType is Delete, add it into the deletedShapes array
+			if blockChain[i].SetOPs[j].OpType == "Delete" {
+				deletedShapes = append(deletedShapes, blockChain[i].SetOPs[j].DeleteUniqueID)
+			}
+
+			// If OpType is Add, check against deletedShapes and add if it is not there
+			if blockChain[i].SetOPs[j].OpType == "Add" {
+				deleted := false
+				for k := 0; k < len(deletedShapes); k++ {
+					if deletedShapes[k] == blockChain[i].SetOPs[j].UniqueID {
+						alreadyDeleted = true
+					}
+				}
+				if deleted == false {
+					pathsReturned = append(pathsReturned, blockChain[i].SetOPs[j].PathShape)
+				}
+			}
+		}
+	}
+
+	*paths = pathsReturned
+
+	return nil
+}
+
 func (artkey *ArtKey) ValidateKey(artNodeKey *blockartlib.ArtNodeKey, canvasSettings *blockartlib.CanvasSettings) error {
 
 	if ecdsa.Verify(&pubKey, artNodeKey.Hash, artNodeKey.R, artNodeKey.S) == true {
@@ -237,6 +277,7 @@ func (artkey *ArtKey) AddShape(operation *Operation, reply *bool) error {
 }
 
 func (artkey *ArtKey) GetInk(_ *struct{}, inkAmount *uint32) error {
+	LongestBlockChain := FindLongestBlockChain()
 	for i := len(longestBlockChain) - 1; i >= 0; i-- {
 		if reflect.DeepEqual(blockList[i].MinerPubKey, pubKey) {
 			*inkAmount = blockList[i].TotalInkAmount

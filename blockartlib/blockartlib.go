@@ -17,8 +17,10 @@ import (
 	"math/big"
 	"net"
 	"net/rpc"
+	"os"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -317,7 +319,6 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	// - DisconnectedError
 	// - InsufficientInkError
-	// - InvalidShapeSvgStringError TODO: when fill or stroke is empty https://piazza.com/class/jbyh5bsk4ez3cn?cid=414
 
 	// For parsing shapeSvgString:  https://piazza.com/class/jbyh5bsk4ez3cn?cid=416
 
@@ -328,8 +329,18 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 		return "", "", inkRemaining, ShapeSvgStringTooLongError(shapeSvgString)
 	}
 
-	// - OutOfBoundsError
 	svgArray := strings.Split(shapeSvgString, " ")
+
+	// - InvalidShapeSvgStringError TODO: when fill or stroke is empty https://piazza.com/class/jbyh5bsk4ez3cn?cid=414
+	if checkValidFillAndStroke(fill, stroke) == false {
+		return "", "", inkRemaining, InvalidShapeSvgStringError(shapeSvgString)
+	}
+
+	if checkValidSvgArray(svgArray) == false {
+		return "", "", inkRemaining, InvalidShapeSvgStringError(shapeSvgString)
+	}
+
+	// - OutOfBoundsError
 	if !BoundCheck(svgArray) {
 		boundsErr := OutOfBoundsError{}
 		return "", "", inkRemaining, OutOfBoundsError(boundsErr)
@@ -434,6 +445,23 @@ func (canvasObj CanvasObj) GetShapes(blockHash string) (shapeHashes []string, er
 	}
 
 	return shapeHashes, nil
+}
+
+// Retrieves all the PATH shapes from Ink Miner's local longest blockchain and creates an HTML file of the Canvas
+func CreateCanvasHTML(paths []string, cSettings CanvasSettings) {
+
+	f, err := os.Create("Canvas.html")
+	HandleError(err)
+
+	svgPath := "<svg height=\"" + cSettings.CanvasYMax + "\" width=\"" + cSettings.CanvasXMax + "\">"
+
+	for i := 0; i < len(paths); i++ {
+		svgPath = svgPath + paths[i]
+	}
+	svgPath = svgPath + "</svg>"
+
+	f.Write([]byte(svgPath))
+
 }
 
 ///////////////////////////////// HELPER FUNCTIONS BELOW
@@ -552,14 +580,95 @@ func CalcInkUsed(svgArray []string) int64 {
 
 }
 
+func checkValidFillAndStroke(fill string, stroke string) bool {
+	if fill == "transparent" && stroke == "transparent" {
+		return false
+	}
 
-// TODO:
-// CHECK TO SEE IF THE SVGSTRING IS VALID OR NOT
-func HandleInvalidSVGString(svgArray []string) bool {
+	if fill == "" || stroke == "" {
+		return false
+	}
 
-
+	return true
 }
 
+func checkValidSvgArray(svgArray []string) bool {
+
+	// Check if "M" is always the first element in string array
+	if svgArray[0] != "M" {
+		return false
+	}
+
+	// M or m --> 2 ints
+	// L or l --> 2 ints
+	// V or v --> 1 int
+	// H or h --> 1 int
+	// Z or z --> 0 int
+	restrictionInt := 0
+	for i := 0; i < len(svgArray); i++ {
+
+		if restrictionInt > 0 {
+			if isNum(svgArray[i]) {
+				restrictionInt = restrictionInt - 1
+			} else {
+				return false
+			}
+		} else {
+			if isLetter(svgArray[i]) {
+				switch svgArray[i] {
+				case "M":
+					restrictionInt = 2
+				case "m":
+					restrictionInt = 2
+				case "L":
+					restrictionInt = 2
+				case "l":
+					restrictionInt = 2
+				case "V":
+					restrictionInt = 1
+				case "v":
+					restrictionInt = 1
+				case "H":
+					restrictionInt = 1
+				case "h":
+					restrictionInt = 1
+				case "Z":
+					restrictionInt = 0
+				case "z":
+					restrictionInt = 0
+				default:
+					return false
+				}
+			} else {
+				return false
+			}
+		}
+	}
+
+	if restrictionInt > 0 {
+		return false
+	} else {
+		return true
+	}
+}
+
+func isLetter(svgLetter string) bool {
+	for _, letter := range svgLetter {
+		if !unicode.IsLetter(letter) {
+			return false
+		}
+	}
+	return true
+}
+
+func isNum(svgNum string) bool {
+	for _, num := range svgNum {
+		if !unicode.IsNumber(num) {
+			return false
+		}
+	}
+	return true
+}
 
 // checks the boundary settings for the position of shape, EX "M 0 10 H 20" checks 0 and 10
 func BoundCheck(svgArray []string) bool {
