@@ -732,7 +732,7 @@ func ComputeBlockHash(block Block) string {
 	// this states if it is an op block (has set of OPs) or not
 	if len(block.SetOPs) > 0 {
 		for i := 0; i < len(block.SetOPs); i++ {
-			hash = hash + string(block.SetOPs[i].ShapeType) + block.SetOPs[i].OPSignature
+			hash = hash + string(block.SetOPs[i].ShapeType) + block.SetOPs[i].UniqueID
 		}
 	}
 	minerPubKey, _ := json.Marshal(block.MinerPubKey)
@@ -771,8 +771,14 @@ func GetMaxValidateNum(operations []Operation) int {
 }
 
 // Checks whether or not operations are validated or not (check validateNum against the block)
-func CheckOperationValidation(uniqueID string) {
+func CheckOperationValidation(uniqueID string) bool {
+	timeOut := 0
 	for {
+		// Times out, sends reply back (3 mins currently)
+		if timeOut == 36 {
+			return false
+		}
+
 		// blockToCheck is the block that contains the checked Operation
 		blockToCheck := Block{}
 		opToCheck := Operation{}
@@ -813,7 +819,7 @@ func CheckOperationValidation(uniqueID string) {
 		if endBlock.Hash != "" {
 			// Stop the infinite for loop when we find something to send back to the Art Node
 			if endBlock.PathLength-blockToCheck.PathLength >= opToCheck.ValidateNum {
-				break
+				return true
 			}
 		}
 
