@@ -288,10 +288,10 @@ func (canvasObj CanvasObj) GetChildren(blockHash string) (blockHashes []string, 
 	var reply []string
 	err = canvasObj.MinerCli.Call("ArtKey.GetChildren", blockHash, &reply)
 	if err != nil {
+		if err.Error() == "Hash does not exist" {
+			return nil, InvalidBlockHashError(blockHash)
+		}
 		return nil, DisconnectedError(address)
-	}
-	if len(reply) > 0 && reply[0] == "INVALID" {
-		return nil, InvalidBlockHashError(blockHash)
 	}
 
 	return reply, nil
@@ -422,7 +422,17 @@ func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (ink
 // - DisconnectedError
 // - InvalidBlockHashError
 func (canvasObj CanvasObj) GetShapes(blockHash string) (shapeHashes []string, err error) {
-	return shapeHashes, err
+	address := canvasObj.MinerAddress
+
+	err = canvasObj.MinerCli.Call("ArtKey.GetShapes", blockHash, &shapeHashes)
+	if err != nil {
+		if err.Error() == "Invalid shape hash" {
+			return shapeHashes, InvalidBlockHashError(blockHash)
+		}
+		return shapeHashes, DisconnectedError(address)
+	}
+
+	return shapeHashes, nil
 }
 
 ///////////////////////////////// HELPER FUNCTIONS BELOW
