@@ -463,7 +463,7 @@ func CreateCanvasHTML(paths []string, cSettings CanvasSettings) {
 	f, err := os.Create("Canvas.html")
 	HandleError(err)
 
-	svgPath := "<svg height=\"" + cSettings.CanvasYMax + "\" width=\"" + cSettings.CanvasXMax + "\">"
+	svgPath := "<svg height=\"" + strconv.Itoa(int(cSettings.CanvasYMax)) + "\" width=\"" + strconv.Itoa(int(cSettings.CanvasXMax)) + "\">"
 
 	for i := 0; i < len(paths); i++ {
 		svgPath = svgPath + paths[i]
