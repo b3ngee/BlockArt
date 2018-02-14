@@ -46,10 +46,7 @@ type Operation struct {
 	Stroke         string
 	OpInkCost      uint32
 	OpType         string
-	xStart         float64
-	xEnd           float64
-	yStart         float64
-	yEnd           float64
+	Lines          []Line
 }
 
 var canvasSettings CanvasSettings
@@ -71,6 +68,16 @@ type CanvasObj struct {
 type ArtNodeKey struct {
 	R, S *big.Int
 	Hash []byte
+}
+
+type Line struct {
+	start Point
+	end   Point
+}
+
+type Point struct {
+	x float64
+	y float64
 }
 
 // Settings for an instance of the BlockArt project/network.
@@ -339,7 +346,7 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 	fmt.Println(inkReq)
 
 	nodePrivKey := canvasObj.PrivateKey
-	var reply string
+	var reply bool
 
 	r, s, _ := ecdsa.Sign(rand.Reader, &nodePrivKey, []byte("This is the Private Key."))
 
@@ -350,9 +357,9 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	//set the coordinates
 
-	x, xe, y, ye := GetCoordinates(svgArray)
+	linesToDraw := GetCoordinates(svgArray)
 
-	err = canvasObj.MinerCli.Call("ArtKey.AddKey", Operation{
+	err = canvasObj.MinerCli.Call("ArtKey.AddShape", Operation{
 		UniqueID:       shapeHash,
 		OpInkCost:      inkReq,
 		OPSigR:         r,
@@ -363,10 +370,7 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 		ShapeSvgString: shapeSvgString,
 		Fill:           fill,
 		Stroke:         stroke,
-		xStart:         x,
-		xEnd:           xe,
-		yStart:         y,
-		yEnd:           ye,
+		Lines:          linesToDraw,
 	}, &reply)
 	if err != nil {
 		return "", "", inkRemaining, DisconnectedError(address)
@@ -455,57 +459,93 @@ func HandleSvgStringLength(svgstr string) bool {
 }
 
 // gets the corrdinates for the operation
-func GetCoordinates(svgArray []string) (float64, float64, float64, float64) {
-	hor := svgArray[3]
-	vert := svgArray[5]
+func GetCoordinates(svgArray []string) []Line {
+	// Uppercase = absolute
+	// Lowercase = relative
+	lines := []Line{}
+	origin := Point{}
+	startPt := Point{}
+	endPt := Point{}
 
-	xstart, err := strconv.ParseInt(svgArray[1], 0, 32)
-	HandleError(err)
-	xend := int64(0)
-	ystart, err := strconv.ParseInt(svgArray[2], 0, 32)
-	HandleError(err)
-	yend := int64(0)
+	for i := 0; i < len(svgArray); i++ {
+		str := svgArray[i]
 
-	if hor == "H" && vert == "V" {
-		hendstr := svgArray[4]
-		hend, err := strconv.ParseInt(hendstr, 0, 32)
-		HandleError(err)
-		xend = hend
-		vendstr := svgArray[6]
-		vend, err := strconv.ParseInt(vendstr, 0, 32)
-		HandleError(err)
-		yend = vend
+		switch str {
+		case "M":
+			xp := ToFloat64(svgArray[i+1])
+			yp := ToFloat64(svgArray[i+2])
+			startPt = Point{x: xp, y: yp}
+			origin = startPt
+			i = i + 2
+		case "m":
+			xp := ToFloat64(svgArray[i+1]) + startPt.x
+			yp := ToFloat64(svgArray[i+2]) + startPt.y
+			startPt = Point{x: xp, y: yp}
+			origin = startPt
+			i = i + 2
+		case "L":
+			xp := ToFloat64(svgArray[i+1])
+			yp := ToFloat64(svgArray[i+2])
+			endPt = Point{x: xp, y: yp}
 
-	} else {
-		if hor == "H" {
-			hendstr := svgArray[4]
-			hend, err := strconv.ParseInt(hendstr, 0, 32)
-			HandleError(err)
-			xend = hend
-			yend = -1
-		} else {
-			if hor == "V" {
-				vendstr := svgArray[4]
-				vend, err := strconv.ParseInt(vendstr, 0, 32)
-				HandleError(err)
-				yend = vend
-				xend = -1
-			}
+			lines = append(lines, Line{start: startPt, end: endPt})
+			startPt = endPt
+			i = i + 2
+		case "l":
+			xp := ToFloat64(svgArray[i+1]) + startPt.x
+			yp := ToFloat64(svgArray[i+2]) + startPt.y
+			endPt = Point{x: xp, y: yp}
+
+			lines = append(lines, Line{start: startPt, end: endPt})
+			startPt = endPt
+			i = i + 2
+		case "H":
+			xp := ToFloat64(svgArray[i+1])
+			yp := startPt.y
+			endPt = Point{x: xp, y: yp}
+
+			lines = append(lines, Line{start: startPt, end: endPt})
+			startPt = endPt
+			i = i + 1
+		case "h":
+			xp := ToFloat64(svgArray[i+1]) + startPt.x
+			yp := startPt.y
+			endPt = Point{x: xp, y: yp}
+
+			lines = append(lines, Line{start: startPt, end: endPt})
+			startPt = endPt
+			i = i + 1
+		case "V":
+			xp := startPt.x
+			yp := ToFloat64(svgArray[i+1])
+			endPt = Point{x: xp, y: yp}
+
+			lines = append(lines, Line{start: startPt, end: endPt})
+			startPt = endPt
+			i = i + 1
+		case "v":
+			xp := startPt.x
+			yp := ToFloat64(svgArray[i+1]) + startPt.y
+			endPt = Point{x: xp, y: yp}
+
+			lines = append(lines, Line{start: startPt, end: endPt})
+			startPt = endPt
+			i = i + 1
+		case "Z":
+			endPt = origin
+			lines = append(lines, Line{start: startPt, end: endPt})
+		case "z":
+			endPt = origin
+			lines = append(lines, Line{start: startPt, end: endPt})
 		}
 	}
 
-	// then we know its a line
-	hendstr := svgArray[4]
-	hend, err := strconv.ParseInt(hendstr, 0, 32)
-	HandleError(err)
-	xend = hend
+	return lines
+}
 
-	vendstr := svgArray[5]
-	vend, err := strconv.ParseInt(vendstr, 0, 32)
-	HandleError(err)
-	yend = vend
-
-	return float64(xstart), float64(xend), float64(ystart), float64(yend)
+func ToFloat64(str string) float64 {
+	result, _ := strconv.ParseFloat(str, 64)
+	return result
 }
 
 func CalcInkUsed(svgArray []string) int64 {

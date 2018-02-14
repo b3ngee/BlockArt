@@ -82,19 +82,11 @@ type Operation struct {
 	Stroke         string
 	OpInkCost      uint32
 	OpType         string
-	xStart         float64
-	xEnd           float64
-	yStart         float64
-	yEnd           float64
+	Lines          []Line
 }
 
 type LongestBlockChain struct {
 	BlockChain []Block
-}
-
-type Point struct {
-	x float64
-	y float64
 }
 
 // Keeps track of all the keys & Miner Address so miner can send it to other miners.
