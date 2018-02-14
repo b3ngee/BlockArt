@@ -76,13 +76,16 @@ type Operation struct {
 	OPSigS        *big.Int
 
 	//Adding some new fields that could come in handy trying to validate
-	ValidateNum int
-	OpInkCost   uint32
-	OpType      string
-	xStart      float64
-	xEnd        float64
-	yStart      float64
-	yEnd        float64
+	ValidateNum    int
+	ShapeSvgString string
+	Fill           string
+	Stroke         string
+	OpInkCost      uint32
+	OpType         string
+	xStart         float64
+	xEnd           float64
+	yStart         float64
+	yEnd           float64
 }
 
 type LongestBlockChain struct {
@@ -862,6 +865,17 @@ func (artkey *ArtKey) GetShapes(blockHash string, shapeHashes *[]string) error {
 	}
 
 	return errors.New("Invalid shape hash")
+}
+
+func (artKey *ArtKey) GetOperationWithShapeHash(shapeHash string, operation *Operation) error {
+	for _, op := range operationsHistory {
+		if op.UniqueID == shapeHash {
+			*operation = op
+			return nil
+		}
+	}
+	*operation = Operation{}
+	return nil
 }
 
 func main() {
