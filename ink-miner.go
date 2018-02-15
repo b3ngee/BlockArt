@@ -261,6 +261,9 @@ func (artkey *ArtKey) AddShape(operation Operation, reply *bool) error {
 			delete(connectedMiners, key)
 		}
 	}
+
+	CheckOperationValidation(operation.UniqueID)
+
 	return nil
 }
 
@@ -827,7 +830,22 @@ func CheckOperationValidation(uniqueID string) bool {
 		}
 
 		time.Sleep(5 * time.Second)
+		timeOut = timeOut + 1
 	}
+}
+
+func FindOperationInLongestChain(shapeHash string) Operation {
+	longestBlockChain := globalChain
+
+	for _, block := range longestBlockChain {
+		for _, op := range block.SetOPs {
+			if op.UniqueID == shapeHash {
+				return op
+			}
+		}
+	}
+
+	return Operation{}
 }
 
 func (artkey *ArtKey) GetChildren(blockHash string, children *[]string) error {
@@ -876,17 +894,69 @@ func (artkey *ArtKey) GetShapes(blockHash string, shapeHashes *[]string) error {
 }
 
 func (artKey *ArtKey) GetOperationWithShapeHash(shapeHash string, operation *Operation) error {
-	longestBlockChain := globalChain
+	op := FindOperationInLongestChain(shapeHash)
 
-	for _, block := range longestBlockChain {
-		for _, op := range block.SetOPs {
-			if op.UniqueID == shapeHash {
-				*operation = op
-				return nil
-			}
+	if op.UniqueID == "" {
+		return errors.New("Does not exist")
+	}
+
+	*operation = op
+	return nil
+}
+
+func (artKey *ArtKey) DeleteShape(request blockartlib.DeleteShapeRequest, inkRemaining *uint32) error {
+	op := FindOperationInLongestChain(request.ShapeHash)
+
+	if op.UniqueID == "" {
+		return errors.New("Does not exist")
+	}
+	if pubKey != op.ArtNodePubKey {
+		return errors.New("Did not create")
+	}
+
+	longestBlockChain := globalChain
+	for i := 0; i < len(longestBlockChain); i++ {
+		block := longestBlockChain[i]
+		if reflect.DeepEqual(block.MinerPubKey, pubKey) {
+			*inkRemaining = block.TotalInkAmount + op.OpInkCost
+			break
 		}
 	}
-	*operation = Operation{}
+
+	return nil
+}
+
+func (artkey *ArtKey) ValidateDelete(operation Operation, reply *bool) error {
+	longestBlockChain := globalChain
+
+	err := ValidateOperationForLongestChain(operation, longestBlockChain)
+	if err != nil {
+		return err
+	}
+
+	operationsHistory = append(operationsHistory, operation.UniqueID)
+	operations = append(operations, operation)
+
+	// Floods the network of miners with Operations
+	for key, miner := range connectedMiners {
+
+		err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
+
+		if err != nil {
+			delete(connectedMiners, key)
+		}
+	}
+
+	*reply = CheckOperationValidation(operation.UniqueID)
+
+	for i := 0; i < len(longestBlockChain); i++ {
+		block := longestBlockChain[i]
+		if reflect.DeepEqual(block.MinerPubKey, pubKey) {
+			block.TotalInkAmount = operation.OpInkCost
+			break
+		}
+	}
+
 	return nil
 }
 
