@@ -718,13 +718,17 @@ func ConnectToMiners(addrSet []net.Addr, currentAddress net.Addr, currentPubKey 
 }
 
 // Goroutine to get nodes (if number of connected miners go below min-num-miner-connections, get more from server)
-func GetNodes(cli *rpc.Client) {
+func GetNodes(cli *rpc.Client, minNumberConnections int) {
 	for {
-		var addrSet []net.Addr
-		err := cli.Call("RServer.GetNodes", pubKey, &addrSet)
-		HandleError(err)
+		if len(connectedMiners) < minNumberConnections {
 
-		ConnectToMiners(addrSet, minerAddr, pubKey)
+			var addrSet []net.Addr
+
+			err := cli.Call("RServer.GetNodes", pubKey, &addrSet)
+			HandleError(err)
+
+			ConnectToMiners(addrSet, minerAddr, pubKey)
+		}
 
 		time.Sleep(30000 * time.Millisecond)
 	}
@@ -1019,7 +1023,7 @@ func main() {
 
 	ConnectToMiners(addrSet, minerAddr, pubKey)
 
-	go GetNodes(cli)
+	go GetNodes(cli, int(settings.MinNumMinerConnections))
 
 	GenerateBlock(settings)
 }
