@@ -295,7 +295,7 @@ func GetInkAmount(prevBlock *Block) uint32 {
 	return 0
 }
 
-func GenerateBlock(settings blockartlib.MinerNetSettings) {
+func GenerateBlock() {
 	for {
 		var difficulty int
 		var isNoOp bool
@@ -316,8 +316,6 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 			difficulty = int(settings.PoWDifficultyNoOpBlock)
 		}
 
-		zeroString := strings.Repeat("0", difficulty)
-
 		endBlocks := FindLastBlockOfLongestChain()
 
 		if len(endBlocks) > 1 {
@@ -332,7 +330,10 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 
 		globalChain = FindBlockChainPath(*prevBlock)
 
-		prevBlockHash := ComputeBlockHash(*prevBlock)
+		prevBlockHash := *prevBlock.Hash
+		newBlock.PreviousHash = prevBlockHash
+
+		zeroString := strings.Repeat("0", difficulty)
 
 		for {
 			if isNoOp && len(operations) > 0 {
@@ -343,7 +344,6 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 			subString := hash[len(hash)-difficulty:]
 			if zeroString == subString {
 				newBlock.Hash = hash
-				newBlock.PreviousHash = prevBlockHash
 				newBlock.IsEndBlock = true
 
 				SendBlockInfo(newBlock)
@@ -363,10 +363,11 @@ func SelectValidBranch(endBlocks []*Block, newBlock Block) *Block {
 		currPath := FindBlockChainPath(*block)
 		for _, op := range newBlock.SetOPs {
 			err = ValidateOperationForLongestChain(op, currPath)
+			if err != nil {
+				break
+			}
 		}
-		if err == nil {
-			validEndBlocks = append(validEndBlocks, block)
-		}
+		validEndBlocks = append(validEndBlocks, block)
 	}
 
 	if len(validEndBlocks) > 1 {
@@ -416,12 +417,12 @@ func CheckIntersection(operation Operation) error {
 		deletes := []Operation{}
 		start := line.start
 		end := line.end
-		for k := len(blockChain) - 1; k > 0; k-- {
+		for k := 0; k < len(blockChain); k++ {
 			for _, op := range blockChain[k].SetOPs {
 				for _, opLine := range op.Lines {
 					opStart := opLine.start
 					opEnd := opLine.end
-					if CheckIntersectionLines(start, end, opStart, opEnd) {
+					if CheckIntersectionLines(start, end, opStart, opEnd) && operation.ArtNodePubKey != op.ArtNodePubKey {
 						if op.OpType == "Add" {
 							exists := false
 							for i, delOp := range deletes {
@@ -510,7 +511,7 @@ func FindBlockChainPath(block Block) []Block {
 	tempBlock := block
 	path := []Block{}
 
-	for i := block.PathLength; i > 1; i-- {
+	for i := block.PathLength; i >= 1; i-- {
 		path = append(path, tempBlock)
 		tempBlock = *tempBlock.PreviousBlock
 	}
@@ -638,50 +639,49 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 	// need clarification from you guys
 	// Check that each operation in the block has a valid signature
 
-	if ecdsa.Verify(&operation.ArtNodePubKey, []byte("This is private key"), operation.OPSigR, operation.OPSigS) {
-		fmt.Println("op-sig is valid .... continuing validation")
-	} else {
-		return errors.New("failed to validate operation signature")
+	if !ecdsa.Verify(&operation.ArtNodePubKey, []byte("This is the private key"), operation.OPSigR, operation.OPSigS) {
+		return errors.New("Failed to validate operation signature")
 	}
 
 	// Checks for DeleteShape
 	if operation.OpType == "Delete" {
 
 		DeleteConfirmed := false
-		for i := len(longestChain); i > 1; i-- {
+		for i := 0; i < len(longestChain); i++ {
 
-			for m := 0; m < len(longestChain[m].SetOPs); m++ {
+			for m := 0; m < len(longestChain[i].SetOPs); m++ {
 				if operation.DeleteUniqueID == longestChain[i].SetOPs[m].UniqueID {
 					DeleteConfirmed = true
+					return nil
 				}
 			}
 		}
 
 		if DeleteConfirmed == false {
-			return blockartlib.ShapeOverlapError(operation.DeleteUniqueID)
+			return blockartlib.ShapeOwnerError(operation.DeleteUniqueID)
 		}
 	}
 
 	// Checks for AddShape
 	if operation.OpType == "Add" {
 		// Validates the operation against duplicate signatures (UniqueID)
-		for j := len(longestChain); j > 1; j-- {
+		for j := 0; j < len(longestChain); j++ {
 
 			for k := 0; k < len(longestChain[j].SetOPs); k++ {
 
 				if operation.UniqueID == longestChain[j].SetOPs[k].UniqueID {
-					return blockartlib.ShapeOverlapError(longestChain[j].SetOPs[k].UniqueID)
+					return blockartlib.ShapeOverlapError(operation.UniqueID)
 				}
 			}
 		}
 
 		// Validates the operation against the Ink Amount Check
-		for l := len(longestChain); l > 1; l-- {
+		for l := 0; l < len(longestChain); l++ {
 
 			if reflect.DeepEqual(longestChain[l].MinerPubKey, operation.ArtNodePubKey) {
 
 				if longestChain[l].InkBank-operation.OpInkCost < 0 {
-					return blockartlib.InsufficientInkError(operation.OpInkCost)
+					return blockartlib.InsufficientInkError(longestChain[l].InkBank)
 				}
 			}
 		}
@@ -709,7 +709,6 @@ func ConnectToMiners(addrSet []net.Addr, currentAddress net.Addr, currentPubKey 
 	for i := 0; i < len(addrSet); i++ {
 
 		if _, ok := connectedMiners[addrSet[i].String()]; !ok {
-			fmt.Println("hello")
 			cli, err := rpc.Dial("tcp", addrSet[i].String())
 
 			var reply MinerInfo
@@ -718,7 +717,6 @@ func ConnectToMiners(addrSet []net.Addr, currentAddress net.Addr, currentPubKey 
 
 			connectedMiners[reply.Address.String()] = Miner{Address: reply.Address, Key: reply.Key, Cli: cli}
 		}
-
 	}
 }
 
@@ -984,8 +982,6 @@ func main() {
 	lis, err := net.Listen("tcp", ":0")
 	minerAddr = lis.Addr()
 
-	fmt.Println(minerAddr)
-
 	cli, _ := rpc.Dial("tcp", serverAddr)
 
 	minerKey := new(MinerKey)
@@ -997,26 +993,8 @@ func main() {
 	err = cli.Call("RServer.Register", MinerInfo{Address: minerAddr, Key: pubKey}, &settings)
 	HandleError(err)
 
-	// fmt.Println(settings)
-
 	blockList = append(blockList, Block{Hash: settings.GenesisBlockHash, PathLength: 1, IsEndBlock: true})
 	globalChain = FindLongestBlockChain()
-
-	/////////////////////////////////////////////
-	// VALIDATION TEXTING
-	// checking block validation
-	// blockList = append(blockList, Block{Hash: "345", PathLength: 1, IsEndBlock: true})
-	// blockList = append(blockList, Block{Hash: "1234", PathLength: 1, IsEndBlock: true})
-	// var singleop Operation = Operation{ShapeType: 5, OPSignature: "yolo", ArtNodePubKey: pubKey}
-	// var operationsCheck []Operation
-	// operationsCheck = append(operationsCheck, singleop)
-	// previousTestBlock := Block{PreviousHash: "345", Hash: "1234"}
-	// blocktocheck := Block{PreviousBlock: &previousTestBlock, PreviousHash: "1234", Hash: "yee",
-	// SetOPs: operationsCheck, MinerPubKey: pubKey, Nonce: 5, InkAmount: 6}
-
-	///////////////////////////////////////////////
-
-	fmt.Println(blockList)
 
 	go InitHeartbeat(cli, pubKey, settings.HeartBeat)
 
@@ -1032,7 +1010,7 @@ func main() {
 
 	go SyncMinersLongestChain()
 
-	GenerateBlock(settings)
+	GenerateBlock()
 }
 
 func HandleError(err error) {
