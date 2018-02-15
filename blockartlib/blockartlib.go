@@ -366,8 +366,7 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 	}
 
 	// calculate amount of ink that this shape will use
-	inkReq := uint32(CalcInkUsed(svgArray))
-	fmt.Println(inkReq)
+	inkReq := CalcInkUsed(boundCheck, fill)
 
 	nodePrivKey := canvasObj.PrivateKey
 	var reply bool
@@ -595,46 +594,63 @@ func ToFloat64(str string) float64 {
 	return result
 }
 
-func CalcInkUsed(svgArray []string) int64 {
-	fill := svgArray[3]
-	vert := svgArray[5]
-	var totalInk int64 = 0
+func CalcInkUsed(lines []Line, fill string) uint32 {
 
-	if fill == "H" && vert == "V" {
-		hfill := svgArray[4]
-		hink, err := strconv.ParseInt(hfill, 0, 32)
-		HandleError(err)
-		vfill := svgArray[6]
-		vink, err := strconv.ParseInt(vfill, 0, 32)
-		HandleError(err)
+	var inkTotal float64
 
-		totalInk = vink * hink
-		return totalInk
-	} else {
-		anyfill := svgArray[4]
-		hOrVInk, err := strconv.ParseInt(anyfill, 0, 32)
-		HandleError(err)
-		return hOrVInk
+	inkTotal = 0
+
+	for i := 0; i < len(lines); i++ {
+		xstart := lines[i].start
+		xspos := xstart.x
+		ystart := lines[i].start
+		yspos := ystart.y
+		xend := lines[i].end
+		xepos := xend.x
+		yend := lines[i].end
+		yepos := yend.y
+		
+		distance := math.Pow(float64(xspos)-float64(xepos), 2) + math.Pow(float64(yspos)-float64(yepos), 2)
+		rootDis := math.Sqrt(distance)
+		
+		inkTotal = rootDis + inkTotal
+
+	}
+	
+	if fill != "transparent"{
+		points := []Point{}
+		for i := 0; i < len(lines); i++ {
+			points = append(points, lines[i].start)
+		
+		}
+		areaInk := PolygonArea(points)
+		inkTotal = areaInk + inkTotal
 	}
 
-	// or the fill will be the line L
+	inkTotal = round(inkTotal)
 
-	startlinex := svgArray[1]
-	x, err := strconv.ParseInt(startlinex, 0, 32)
-	HandleError(err)
-	startliney := svgArray[2]
-	y, err := strconv.ParseInt(startliney, 0, 32)
-	HandleError(err)
-	endlinex := svgArray[4]
-	xend, err := strconv.ParseInt(endlinex, 0, 32)
-	HandleError(err)
-	endliney := svgArray[5]
-	yend, err := strconv.ParseInt(endliney, 0, 32)
-	HandleError(err)
-	distance := math.Pow(float64(x)-float64(xend), 2) + math.Pow(float64(y)-float64(yend), 2)
-	rootDis := int64(math.Sqrt(distance))
+	return uint32(inkTotal)
 
-	return rootDis
+}
+
+func PolygonArea (points []Point) float64{
+  	first := points[0]
+    last := first
+  	var area float64
+
+  	for i, _ := range points {
+    	next := points[i]
+    	area = area + next.x * last.y - last.x * next.y;
+    	last = next;
+  	}
+  	return area / 2;
+}
+
+func round(a float64) float64 {
+    if a < 0 {
+        return math.Ceil(a - 0.5)
+    }
+    return math.Floor(a + 0.5)
 }
 
 func checkValidFillAndStroke(fill string, stroke string) bool {
