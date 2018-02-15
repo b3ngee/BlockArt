@@ -208,6 +208,13 @@ func (minerKey *MinerKey) ReceiveOperation(operation Operation, reply *bool) err
 	}
 
 	if exists == false {
+		longestBlockChain := FindLongestBlockChain()
+
+		err := ValidateOperationForLongestChain(operation, longestBlockChain)
+		if err != nil {
+			return err
+		}
+
 		operationsHistory = append(operationsHistory, operation.UniqueID)
 		operations = append(operations, operation)
 
@@ -252,6 +259,7 @@ func (artkey *ArtKey) AddShape(operation Operation, reply *bool) error {
 			delete(connectedMiners, key)
 		}
 	}
+	return nil
 }
 
 func (artkey *ArtKey) GetInk(empty string, inkAmount *uint32) error {
@@ -365,24 +373,43 @@ func SelectRandomBranch(endBlocks []*Block) *Block {
 	return endBlocks[randIndex]
 }
 
+// returns true if there is an intersection within operation set
+func CheckIntersectionWithinOp(operations []Operation) bool {
+	deletes := []Operation{}
+	length := len(operations)
+	// for every op in operations, for every line segment in the op, compare to next operation's every line segment.
+	for i := 0; i < length; i++ {
+		for j := 0; j < length; j++ {
+			if i != j {
+				for _, line1 := range operations[i].Lines {
+					//each line of op1 is compared against op2's lines
+					for _, line2 := range operations[j].Lines {
+						if CheckIntersectionLines(line1.start, line1.end, line2.start, line2.end) {
+							return true
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
 // Checks for any possible intersection between one operation and the operations in
 // the longest block chain
-func CheckIntersection(operation Operation) bool {
+// returns error if there is an intersection, nil if there isn't
+func CheckIntersection(operation Operation) error {
 	blockChain := FindLongestBlockChain()
 	for _, line := range operation.Lines {
 		deletes := []Operation{}
 		start := line.start
 		end := line.end
-		point1 := Point{x: start.x, y: start.y}
-		point2 := Point{x: end.x, y: end.y}
 		for k := len(blockChain) - 1; k > 0; k-- {
 			for _, op := range blockChain[k].SetOPs {
 				for _, opLine := range op.Lines {
 					opStart := opLine.start
 					opEnd := opLine.end
-					point3 := Point{x: opStart.x, y: opStart.y}
-					point4 := Point{x: opEnd.x, y: opEnd.y}
-					if CheckIntersectionLines(point1, point2, point3, point4) {
+					if CheckIntersectionLines(start, end, opStart, opEnd) {
 						if op.OpType == "Add" {
 							exists := false
 							for i, delOp := range deletes {
@@ -393,7 +420,7 @@ func CheckIntersection(operation Operation) bool {
 								}
 							}
 							if !exists {
-								return false
+								return blockartlib.ShapeOverlapError(op.UniqueID)
 							}
 						} else {
 							deletes = append(deletes, op)
@@ -404,7 +431,7 @@ func CheckIntersection(operation Operation) bool {
 			}
 		}
 	}
-	return false
+	return nil
 }
 
 // Checks if given set of points intersect
@@ -657,7 +684,7 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 		}
 	}
 
-	return nil
+	return CheckIntersection(operation)
 }
 
 // call this for op-blocks to validate the op-block
