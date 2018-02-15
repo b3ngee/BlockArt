@@ -980,10 +980,44 @@ func (artKey *ArtKey) DeleteShape(request blockartlib.DeleteShapeRequest, inkRem
 		return errors.New("Did not create")
 	}
 
-	for i := len(longestBlockChain) - 1; i >= 0; i-- {
+	for i := 0; i < len(longestBlockChain); i++ {
 		block := longestBlockChain[i]
 		if reflect.DeepEqual(block.MinerPubKey, pubKey) {
 			*inkRemaining = block.TotalInkAmount + op.OpInkCost
+			break
+		}
+	}
+
+	return nil
+}
+
+func (artkey *ArtKey) ValidateDelete(operation Operation, reply *bool) error {
+	longestBlockChain := FindLongestBlockChain()
+
+	err := ValidateOperationForLongestChain(operation, longestBlockChain)
+	if err != nil {
+		return err
+	}
+
+	operationsHistory = append(operationsHistory, operation.UniqueID)
+	operations = append(operations, operation)
+
+	// Floods the network of miners with Operations
+	for key, miner := range connectedMiners {
+
+		err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
+
+		if err != nil {
+			delete(connectedMiners, key)
+		}
+	}
+
+	*reply = CheckOperationValidation(operation.UniqueID)
+
+	for i := 0; i < len(longestBlockChain); i++ {
+		block := longestBlockChain[i]
+		if reflect.DeepEqual(block.MinerPubKey, pubKey) {
+			block.TotalInkAmount = operation.OpInkCost
 			break
 		}
 	}

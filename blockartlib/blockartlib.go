@@ -476,10 +476,11 @@ func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (ink
 		OPSigR:         r,
 		OPSigS:         s,
 		OpType:         "Delete",
+		OpInkCost:      inkRemaining,
 	}
 
 	var reply bool
-	client.Call("ArtKey.AddShape", deleteOperation, &reply)
+	client.Call("ArtKey.ValidateDelete", deleteOperation, &reply)
 	if err != nil {
 		return 0, DisconnectedError(address)
 	}
