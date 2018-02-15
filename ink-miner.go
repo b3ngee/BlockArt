@@ -37,6 +37,8 @@ import (
 
 var settings blockartlib.MinerNetSettings
 
+var artNodeID int
+
 type MinerKey int
 
 type ArtKey int
@@ -70,6 +72,7 @@ type Block struct {
 }
 
 type Operation struct {
+	ArtNodeID     int
 	ShapeType     blockartlib.ShapeType
 	UniqueID      string
 	ArtNodePubKey ecdsa.PublicKey
@@ -237,6 +240,8 @@ func (artkey *ArtKey) ValidateKey(artNodeKey *blockartlib.ArtNodeKey, canvasSett
 	if ecdsa.Verify(&pubKey, artNodeKey.Hash, artNodeKey.R, artNodeKey.S) == true {
 		*canvasSettings = settings.CanvasSettings
 	}
+
+	artNodeID = artNodeKey.ArtNodeID
 
 	return nil
 }

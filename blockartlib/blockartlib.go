@@ -16,11 +16,13 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	mrand "math/rand"
 	"net"
 	"net/rpc"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -36,6 +38,7 @@ const (
 )
 
 type Operation struct {
+	ArtNodeID     int
 	ShapeType     ShapeType
 	UniqueID      string
 	ArtNodePubKey ecdsa.PublicKey
@@ -68,11 +71,13 @@ type CanvasObj struct {
 	MinerAddress string
 	PrivateKey   ecdsa.PrivateKey
 	MinerCli     *rpc.Client
+	ArtNodeID    int
 }
 
 type ArtNodeKey struct {
-	R, S *big.Int
-	Hash []byte
+	ArtNodeID int
+	R, S      *big.Int
+	Hash      []byte
 }
 
 type Line struct {
@@ -260,6 +265,10 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
 
+	mrand.Seed(time.Now().UnixNano())
+
+	artNodeID := mrand.Intn(10000-1) + 1
+
 	// pubKey := privKey.PublicKey
 
 	cli, err := rpc.Dial("tcp", minerAddr)
@@ -270,7 +279,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 
 	r, s, _ := ecdsa.Sign(rand.Reader, &privKey, []byte("This is the Private Key."))
 
-	err = cli.Call("ArtKey.ValidateKey", ArtNodeKey{R: r, S: s, Hash: []byte("This is the Private Key.")}, &setting)
+	err = cli.Call("ArtKey.ValidateKey", ArtNodeKey{ArtNodeID: artNodeID, R: r, S: s, Hash: []byte("This is the Private Key.")}, &setting)
 	if err != nil {
 		return nil, setting, DisconnectedError(minerAddr)
 	}
@@ -279,7 +288,8 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	canvasObj := CanvasObj{
 		MinerAddress: minerAddr,
 		PrivateKey:   privKey,
-		MinerCli:     cli}
+		MinerCli:     cli,
+		ArtNodeID:    artNodeID}
 
 	return canvasObj, setting, err
 }
@@ -386,6 +396,7 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 	linesToDraw := GetCoordinates(svgArray)
 
 	err = canvasObj.MinerCli.Call("ArtKey.AddShape", Operation{
+		ArtNodeID:      canvasObj.ArtNodeID,
 		UniqueID:       shapeHash,
 		ArtNodePubKey:  canvasObj.PrivateKey.PublicKey,
 		OpInkCost:      inkReq,
@@ -469,6 +480,7 @@ func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (ink
 	r, s, _ := ecdsa.Sign(rand.Reader, &canvasObj.PrivateKey, []byte("This is the Private Key."))
 
 	deleteOperation := Operation{
+		ArtNodeID:      canvasObj.ArtNodeID,
 		UniqueID:       r.String() + s.String(),
 		DeleteUniqueID: shapeHash,
 		ArtNodePubKey:  canvasObj.PrivateKey.PublicKey,
