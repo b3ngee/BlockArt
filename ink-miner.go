@@ -793,11 +793,11 @@ func CheckOperationValidation(uniqueID string) bool {
 		for i := 0; i < len(blockList); i++ {
 			opList := blockList[i].SetOPs
 
-			for j := 0; j < len(blockList[i].SetOPs); j++ {
+			for j := 0; j < len(opList); j++ {
 
-				if blockList[i].SetOPs[j].UniqueID == uniqueID {
+				if opList[j].UniqueID == uniqueID {
 					blockToCheck = blockList[i]
-					opToCheck = blockList[i].SetOPs[j]
+					opToCheck = opList[j]
 					break
 				}
 			}
@@ -904,8 +904,8 @@ func (artKey *ArtKey) GetOperationWithShapeHash(shapeHash string, operation *Ope
 	return nil
 }
 
-func (artKey *ArtKey) DeleteShape(request blockartlib.DeleteShapeRequest, inkRemaining *uint32) error {
-	op := FindOperationInLongestChain(request.ShapeHash)
+func (artKey *ArtKey) DeleteShape(shapeHash string, inkRemaining *uint32) error {
+	op := FindOperationInLongestChain(shapeHash)
 
 	if op.UniqueID == "" {
 		return errors.New("Does not exist")
