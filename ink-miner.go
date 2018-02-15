@@ -299,7 +299,7 @@ func (artkey *ArtKey) AddShape(operation Operation, reply *bool) error {
 			delete(connectedMiners, key)
 		}
 	}
-	
+
 	CheckOperationValidation(operation.UniqueID)
 
 	return nil
@@ -1022,31 +1022,10 @@ func (artKey *ArtKey) DeleteShape(request blockartlib.DeleteShapeRequest, inkRem
 
 	for i := len(longestBlockChain) - 1; i >= 0; i-- {
 		block := longestBlockChain[i]
-		remainingInk := op.OpInkCost
 		if reflect.DeepEqual(block.MinerPubKey, pubKey) {
-			remainingInk = remainingInk + block.TotalInkAmount
+			*inkRemaining = block.TotalInkAmount + op.OpInkCost
 			break
 		}
-	}
-
-	r, s, _ := ecdsa.Sign(rand.Reader, &privKey, []byte("This is the Private Key."))
-
-	deleteOperation := Operation{
-		UniqueID:       r.String() + s.String(),
-		DeleteUniqueID: shapeHash,
-		ValidateNum:    request.ValidateNum,
-		OPSigR:         r,
-		OPSigS:         s,
-		OpType:         "Delete",
-	}
-
-	err := ValidateOperationForLongestChain(deleteOperation, longestBlockChain)
-	if err != nil {
-		return err
-	}
-
-	if CheckOperationValidation(deleteOperation.UniqueID) {
-		*inkRemaining = remainingInk
 	}
 
 	return nil

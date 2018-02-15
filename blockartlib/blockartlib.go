@@ -85,11 +85,6 @@ type Point struct {
 	y float64
 }
 
-type DeleteShapeRequest struct {
-	ValidateNum uint8
-	ShapeHash   string
-}
-
 // Settings for an instance of the BlockArt project/network.
 type MinerNetSettings struct {
 	// Hash of the very first (empty) block in the chain.
@@ -392,6 +387,7 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	err = canvasObj.MinerCli.Call("ArtKey.AddShape", Operation{
 		UniqueID:       shapeHash,
+		ArtNodePubKey:  canvasObj.PrivateKey.PublicKey,
 		OpInkCost:      inkReq,
 		OPSigR:         r,
 		OPSigS:         s,
@@ -462,9 +458,7 @@ func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (ink
 	address := canvasObj.MinerAddress
 	client := canvasObj.MinerCli
 
-	request := DeleteShapeRequest{ValidateNum: validateNum, ShapeHash: shapeHash}
-
-	client.Call("ArtKey.DeleteShape", request, &inkRemaining)
+	client.Call("ArtKey.DeleteShape", shapeHash, &inkRemaining)
 	if err != nil {
 		if err.Error() == "Does not exist" || err.Error() == "Did not create" {
 			return 0, ShapeOwnerError(shapeHash)
@@ -472,7 +466,29 @@ func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (ink
 		return 0, DisconnectedError(address)
 	}
 
-	return inkRemaining, nil
+	r, s, _ := ecdsa.Sign(rand.Reader, &canvasObj.PrivateKey, []byte("This is the Private Key."))
+
+	deleteOperation := Operation{
+		UniqueID:       r.String() + s.String(),
+		DeleteUniqueID: shapeHash,
+		ArtNodePubKey:  canvasObj.PrivateKey.PublicKey,
+		ValidateNum:    int(validateNum),
+		OPSigR:         r,
+		OPSigS:         s,
+		OpType:         "Delete",
+	}
+
+	var reply bool
+	client.Call("ArtKey.AddShape", deleteOperation, &reply)
+	if err != nil {
+		return 0, DisconnectedError(address)
+	}
+
+	if reply {
+		return inkRemaining, nil
+	}
+
+	return 0, errors.New("Timed out, operation not validated")
 }
 
 // Retrieves hashes contained by a specific block.
