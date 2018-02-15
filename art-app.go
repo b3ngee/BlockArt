@@ -62,6 +62,11 @@ func main() {
 	// if checkError(err) != nil {
 	// 	return
 	// }
+
+	svgs := blockartlib.GetAllSVGs(canvas)
+	err = blockartlib.CreateCanvasHTML(svgs, settings)
+	fmt.Println(svgs)
+	fmt.Println(err)
 }
 
 // If error is non-nil, print it out and return it.

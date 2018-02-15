@@ -825,6 +825,58 @@ func BoundCheck(lines []Line) bool {
 	return true
 }
 
+func FindPaths(canvas Canvas, blockHash string, path []string, res *[][]string) error {
+
+	children, err := canvas.GetChildren(blockHash)
+	HandleError(err)
+	if len(children) == 0 {
+		*res = append(*res, path)
+		return nil
+	} else {
+		pathTemp := path
+		for _, c := range children {
+			pathTemp = append(path, c)
+			FindPaths(canvas, c, pathTemp, res)
+		}
+	}
+	return err
+}
+
+func GetAllSVGs(canvas Canvas) ([]string, error) {
+	res := [][]string{}
+	var resPtr *[][]string
+	resPtr = &res
+	path := []string{}
+
+	genHash, err := canvas.GetGenesisBlock()
+	HandleError(err)
+
+	// fills resPtr with arrays of all paths
+	findPathError := FindPaths(canvas, genHash, path, resPtr)
+
+	longestPath := []string{}
+	for _, tempPath := range res {
+		if len(tempPath) > len(longestPath) {
+			longestPath = tempPath
+		}
+	}
+
+	shapeHashes := []string{}
+	for _, blockHash := range longestPath {
+		currBlockHashes, err := canvas.GetShapes(blockHash)
+		HandleError(err)
+		shapeHashes = append(shapeHashes, currBlockHashes...)
+	}
+
+	SVGs := []string{}
+	for _, sHash := range shapeHashes {
+		currSVG, err := canvas.GetSvgString(sHash)
+		HandleError(err)
+		SVGs = append(SVGs, currSVG)
+	}
+	return SVGs, findPathError
+}
+
 func HandleError(err error) {
 	if err != nil {
 		fmt.Println(err)
