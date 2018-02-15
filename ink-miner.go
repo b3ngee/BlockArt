@@ -259,6 +259,9 @@ func (artkey *ArtKey) AddShape(operation Operation, reply *bool) error {
 			delete(connectedMiners, key)
 		}
 	}
+
+	CheckOperationValidation(operation.UniqueID)
+
 	return nil
 }
 
@@ -893,7 +896,22 @@ func CheckOperationValidation(uniqueID string) bool {
 		}
 
 		time.Sleep(5 * time.Second)
+		timeOut = timeOut + 1
 	}
+}
+
+func FindOperationInLongestChain(shapeHash string) ([]Block, Operation) {
+	longestBlockChain := FindLongestBlockChain()
+
+	for _, block := range longestBlockChain {
+		for _, op := range block.SetOPs {
+			if op.UniqueID == shapeHash {
+				return longestBlockChain, op
+			}
+		}
+	}
+
+	return longestBlockChain, Operation{}
 }
 
 func (artkey *ArtKey) GetChildren(blockHash string, children *[]string) error {
@@ -942,17 +960,34 @@ func (artkey *ArtKey) GetShapes(blockHash string, shapeHashes *[]string) error {
 }
 
 func (artKey *ArtKey) GetOperationWithShapeHash(shapeHash string, operation *Operation) error {
-	longestBlockChain := FindLongestBlockChain()
+	_, op := FindOperationInLongestChain(shapeHash)
 
-	for _, block := range longestBlockChain {
-		for _, op := range block.SetOPs {
-			if op.UniqueID == shapeHash {
-				*operation = op
-				return nil
-			}
+	if op.UniqueID == "" {
+		return errors.New("Does not exist")
+	}
+
+	*operation = op
+	return nil
+}
+
+func (artKey *ArtKey) DeleteShape(request blockartlib.DeleteShapeRequest, inkRemaining *uint32) error {
+	longestBlockChain, op := FindOperationInLongestChain(request.ShapeHash)
+
+	if op.UniqueID == "" {
+		return errors.New("Does not exist")
+	}
+	if pubKey != op.ArtNodePubKey {
+		return errors.New("Did not create")
+	}
+
+	for i := len(longestBlockChain) - 1; i >= 0; i-- {
+		block := longestBlockChain[i]
+		if reflect.DeepEqual(block.MinerPubKey, pubKey) {
+			*inkRemaining = block.TotalInkAmount + op.OpInkCost
+			break
 		}
 	}
-	*operation = Operation{}
+
 	return nil
 }
 

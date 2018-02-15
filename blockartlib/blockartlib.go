@@ -12,6 +12,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -386,6 +387,7 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	err = canvasObj.MinerCli.Call("ArtKey.AddShape", Operation{
 		UniqueID:       shapeHash,
+		ArtNodePubKey:  canvasObj.PrivateKey.PublicKey,
 		OpInkCost:      inkReq,
 		OPSigR:         r,
 		OPSigS:         s,
@@ -402,7 +404,11 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 		return "", "", inkRemaining, DisconnectedError(address)
 	}
 
-	return shapeHash, blockHash, inkRemaining, err
+	if reply == true {
+		return shapeHash, blockHash, inkRemaining, err
+	}
+
+	return "", "", 0, errors.New("Timed out, operation not validated")
 }
 
 // Returns the encoding of the shape as an svg string.
@@ -415,10 +421,10 @@ func (canvasObj CanvasObj) GetSvgString(shapeHash string) (svgString string, err
 	var reply Operation
 	err = canvasObj.MinerCli.Call("ArtKey.GetOperationWithShapeHash", shapeHash, &reply)
 	if err != nil {
+		if err.Error() == "Does not exist" {
+			return "", InvalidShapeHashError(shapeHash)
+		}
 		return "", DisconnectedError(address)
-	}
-	if reply.UniqueID == "" {
-		return "", InvalidShapeHashError(shapeHash)
 	}
 
 	shapeType := reply.ShapeType
@@ -447,8 +453,42 @@ func (canvasObj CanvasObj) GetInk() (inkRemaining uint32, err error) {
 // Can return the following errors:
 // - DisconnectedError
 // - ShapeOwnerError
+// - ShapeOwnerError is returned if this application did not create the shape with shapeHash (or if no shape exists with shapeHash).
 func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
-	return inkRemaining, err
+	address := canvasObj.MinerAddress
+	client := canvasObj.MinerCli
+
+	client.Call("ArtKey.DeleteShape", shapeHash, &inkRemaining)
+	if err != nil {
+		if err.Error() == "Does not exist" || err.Error() == "Did not create" {
+			return 0, ShapeOwnerError(shapeHash)
+		}
+		return 0, DisconnectedError(address)
+	}
+
+	r, s, _ := ecdsa.Sign(rand.Reader, &canvasObj.PrivateKey, []byte("This is the Private Key."))
+
+	deleteOperation := Operation{
+		UniqueID:       r.String() + s.String(),
+		DeleteUniqueID: shapeHash,
+		ArtNodePubKey:  canvasObj.PrivateKey.PublicKey,
+		ValidateNum:    int(validateNum),
+		OPSigR:         r,
+		OPSigS:         s,
+		OpType:         "Delete",
+	}
+
+	var reply bool
+	client.Call("ArtKey.AddShape", deleteOperation, &reply)
+	if err != nil {
+		return 0, DisconnectedError(address)
+	}
+
+	if reply {
+		return inkRemaining, nil
+	}
+
+	return 0, errors.New("Timed out, operation not validated")
 }
 
 // Retrieves hashes contained by a specific block.
@@ -609,19 +649,19 @@ func CalcInkUsed(lines []Line, fill string) uint32 {
 		xepos := xend.x
 		yend := lines[i].end
 		yepos := yend.y
-		
+
 		distance := math.Pow(float64(xspos)-float64(xepos), 2) + math.Pow(float64(yspos)-float64(yepos), 2)
 		rootDis := math.Sqrt(distance)
-		
+
 		inkTotal = rootDis + inkTotal
 
 	}
-	
-	if fill != "transparent"{
+
+	if fill != "transparent" {
 		points := []Point{}
 		for i := 0; i < len(lines); i++ {
 			points = append(points, lines[i].start)
-		
+
 		}
 		areaInk := PolygonArea(points)
 		inkTotal = areaInk + inkTotal
@@ -633,24 +673,24 @@ func CalcInkUsed(lines []Line, fill string) uint32 {
 
 }
 
-func PolygonArea (points []Point) float64{
-  	first := points[0]
-    last := first
-  	var area float64
+func PolygonArea(points []Point) float64 {
+	first := points[0]
+	last := first
+	var area float64
 
-  	for i, _ := range points {
-    	next := points[i]
-    	area = area + next.x * last.y - last.x * next.y;
-    	last = next;
-  	}
-  	return area / 2;
+	for i, _ := range points {
+		next := points[i]
+		area = area + next.x*last.y - last.x*next.y
+		last = next
+	}
+	return area / 2
 }
 
 func round(a float64) float64 {
-    if a < 0 {
-        return math.Ceil(a - 0.5)
-    }
-    return math.Floor(a + 0.5)
+	if a < 0 {
+		return math.Ceil(a - 0.5)
+	}
+	return math.Floor(a + 0.5)
 }
 
 func checkValidFillAndStroke(fill string, stroke string) bool {
