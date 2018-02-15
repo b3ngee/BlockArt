@@ -281,9 +281,9 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 		return nil, setting, DisconnectedError(minerAddr)
 	}
 
-	r, s, _ := ecdsa.Sign(rand.Reader, &privKey, []byte("This is the private key."))
+	r, s, _ := ecdsa.Sign(rand.Reader, &privKey, []byte("This is the private key!"))
 
-	err = cli.Call("ArtKey.ValidateKey", ArtNodeKey{R: r, S: s, Hash: []byte("This is the private key.")}, &setting)
+	err = cli.Call("ArtKey.ValidateKey", ArtNodeKey{R: r, S: s, Hash: []byte("This is the private key!")}, &setting)
 	if err != nil {
 		return nil, setting, DisconnectedError(minerAddr)
 	}
@@ -387,7 +387,7 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	nodePrivKey := canvasObj.PrivateKey
 
-	r, s, _ := ecdsa.Sign(rand.Reader, &nodePrivKey, []byte("This is the private key."))
+	r, s, _ := ecdsa.Sign(rand.Reader, &nodePrivKey, []byte("This is the private key!"))
 
 	shapeHash = r.String() + s.String()
 
@@ -483,7 +483,7 @@ func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (ink
 		return 0, DisconnectedError(address)
 	}
 
-	r, s, _ := ecdsa.Sign(rand.Reader, &canvasObj.PrivateKey, []byte("This is the private key."))
+	r, s, _ := ecdsa.Sign(rand.Reader, &canvasObj.PrivateKey, []byte("This is the private key!"))
 
 	deleteOperation := Operation{
 		UniqueID:       r.String() + s.String(),

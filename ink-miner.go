@@ -644,9 +644,9 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 	// Check that each operation in the block has a valid signature
 
 	// CHECK THIS: DON'T THINK IT'S RIGHT
-	// if !ecdsa.Verify(&operation.ArtNodePubKey, []byte("This is the private key"), operation.OPSigR, operation.OPSigS) {
-	// 	return errors.New("Failed to validate operation signature")
-	// }
+	if !ecdsa.Verify(&operation.ArtNodePubKey, []byte("This is the private key!"), operation.OPSigR, operation.OPSigS) {
+		return errors.New("Failed to validate operation signature")
+	}
 
 	// Checks for DeleteShape
 	if operation.OpType == "Delete" {
