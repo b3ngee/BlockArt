@@ -123,6 +123,8 @@ var operations = []Operation{}
 // Operations that are seen already (consists of unique shape hash)
 var operationsHistory = make([]string, 0)
 
+var globalChain []Block
+
 // FUNCTION CALLS
 
 // Registers incoming Miner that wants to connect.
@@ -148,7 +150,7 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) 
 func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain *LongestBlockChain, reply *string) error {
 	mrand.Seed(time.Now().UnixNano())
 
-	ownLongestBlockChain := FindLongestBlockChain()
+	ownLongestBlockChain := globalChain
 	var err error
 
 	// replace own blockList and send to neighbours
@@ -208,7 +210,7 @@ func (minerKey *MinerKey) ReceiveOperation(operation Operation, reply *bool) err
 	}
 
 	if exists == false {
-		longestBlockChain := FindLongestBlockChain()
+		longestBlockChain := globalChain
 
 		err := ValidateOperationForLongestChain(operation, longestBlockChain)
 		if err != nil {
@@ -230,46 +232,6 @@ func (minerKey *MinerKey) ReceiveOperation(operation Operation, reply *bool) err
 	return nil
 }
 
-// Gets all the PATH shape from the longest blockchain
-func (artkey *ArtKey) GetAllPATHShape("", paths *[]string) error {
-
-	// String of all the DeleteUniqueIDs
-	deletedShapes := make([]string, 0)
-
-	// All of the paths that should be returned
-	pathsReturned := make([]string, 0)
-
-	blockChain := FindLongestBlockChain()
-
-	for i := len(blockChain); i > 1; i-- {
-
-		for j := 0; j < len(blockChain[i].SetOPs); j++ {
-
-			// If OpType is Delete, add it into the deletedShapes array
-			if blockChain[i].SetOPs[j].OpType == "Delete" {
-				deletedShapes = append(deletedShapes, blockChain[i].SetOPs[j].DeleteUniqueID)
-			}
-
-			// If OpType is Add, check against deletedShapes and add if it is not there
-			if blockChain[i].SetOPs[j].OpType == "Add" {
-				deleted := false
-				for k := 0; k < len(deletedShapes); k++ {
-					if deletedShapes[k] == blockChain[i].SetOPs[j].UniqueID {
-						alreadyDeleted = true
-					}
-				}
-				if deleted == false {
-					pathsReturned = append(pathsReturned, blockChain[i].SetOPs[j].PathShape)
-				}
-			}
-		}
-	}
-
-	*paths = pathsReturned
-
-	return nil
-}
-
 func (artkey *ArtKey) ValidateKey(artNodeKey *blockartlib.ArtNodeKey, canvasSettings *blockartlib.CanvasSettings) error {
 
 	if ecdsa.Verify(&pubKey, artNodeKey.Hash, artNodeKey.R, artNodeKey.S) == true {
@@ -280,7 +242,7 @@ func (artkey *ArtKey) ValidateKey(artNodeKey *blockartlib.ArtNodeKey, canvasSett
 }
 
 func (artkey *ArtKey) AddShape(operation Operation, reply *bool) error {
-	longestBlockChain := FindLongestBlockChain()
+	longestBlockChain := globalChain
 
 	err := ValidateOperationForLongestChain(operation, longestBlockChain)
 	if err != nil {
@@ -303,7 +265,7 @@ func (artkey *ArtKey) AddShape(operation Operation, reply *bool) error {
 }
 
 func (artkey *ArtKey) GetInk(empty string, inkAmount *uint32) error {
-	LongestBlockChain := FindLongestBlockChain()
+	longestBlockChain := globalChain
 	for i := len(longestBlockChain) - 1; i >= 0; i-- {
 		if reflect.DeepEqual(blockList[i].MinerPubKey, pubKey) {
 			*inkAmount = blockList[i].TotalInkAmount
@@ -360,6 +322,8 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 			prevBlock = endBlocks[0]
 		}
 
+		globalChain = FindBlockChainPath(*prevBlock)
+
 		prevBlockHash := ComputeBlockHash(*prevBlock)
 
 		for {
@@ -386,6 +350,7 @@ func GenerateBlock(settings blockartlib.MinerNetSettings) {
 // If all branches are valid, then choose one at random
 func SelectValidBranch(endBlocks []*Block, newBlock Block) *Block {
 	var validEndBlocks []*Block
+	var err error
 	for _, block := range endBlocks {
 		currPath := FindBlockChainPath(*block)
 		for _, op := range newBlock.SetOPs {
@@ -415,7 +380,6 @@ func SelectRandomBranch(endBlocks []*Block) *Block {
 
 // returns true if there is an intersection within operation set
 func CheckIntersectionWithinOp(operations []Operation) bool {
-	deletes := []Operation{}
 	length := len(operations)
 	// for every op in operations, for every line segment in the op, compare to next operation's every line segment.
 	for i := 0; i < length; i++ {
@@ -439,7 +403,7 @@ func CheckIntersectionWithinOp(operations []Operation) bool {
 // the longest block chain
 // returns error if there is an intersection, nil if there isn't
 func CheckIntersection(operation Operation) error {
-	blockChain := FindLongestBlockChain()
+	blockChain := globalChain
 	for _, line := range operation.Lines {
 		deletes := []Operation{}
 		start := line.start
@@ -587,25 +551,16 @@ func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 	}
 
 	// Check if received block is a No-Op or Op block based on length of operations
-	// 1 = No-Op
-	// 2 = Op
-	var i int = 0
-	if len(operations) == 0 {
-		i = 1
-	} else {
-		i = 2
-	}
 
-	switch i {
-	case 1:
+	if len(operations) == 0 {
 		if ComputeTrailingZeroes(hash, settings.PoWDifficultyNoOpBlock) {
 		} else {
 			return errors.New("No-op block proof of work does not match the zeroes of nonce")
 		}
-	case 2:
+	} else {
 		if ComputeTrailingZeroes(hash, settings.PoWDifficultyOpBlock) {
 			for _, operation := range receivedBlock.SetOPs {
-				ValidateOperation(operation)
+				ValidateOperationForLongestChain(operation, globalChain)
 			}
 		} else {
 			return errors.New("No-op block proof of work does not match the zeroes of nonce")
@@ -619,7 +574,7 @@ func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 	receivedBlock.TotalInkAmount = receivedBlock.InkBank // TODO: minus any operations performed for the generator of this block
 	previousBlock.IsEndBlock = false
 
-	if i == 1 {
+	if len(operations) == 0 {
 		receivedBlock.TotalInkAmount = receivedBlock.TotalInkAmount + settings.InkPerNoOpBlock
 	} else {
 		receivedBlock.TotalInkAmount = receivedBlock.TotalInkAmount + settings.InkPerOpBlock
@@ -727,67 +682,6 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 	return CheckIntersection(operation)
 }
 
-// call this for op-blocks to validate the op-block
-// TODO: DELETE THIS ONE IT'S THE EXACT SAME AS ValidateOperationForLongestChain JUST COMPUTE LONGESTCHAIN AND PASS IN
-func ValidateOperation(operation Operation) error {
-
-	longestChain := FindLongestBlockChain()
-
-	// made a dummy private key but it should correspond to blockartlib shape added?
-	// need clarification from you guys
-	// Check that each operation in the block has a valid signature
-
-	if ecdsa.Verify(&operation.ArtNodePubKey, []byte("This is private key"), operation.OPSigR, operation.OPSigS) {
-		fmt.Println("op-sig is valid .... continuing validation")
-	} else {
-		return errors.New("failed to validate operation signature")
-	}
-
-	// Checks for DeleteShape
-	if operation.OpType == "Delete" {
-
-		DeleteConfirmed := false
-		for i := len(longestChain); i > 1; i-- {
-
-			for m := 0; m < len(longestChain[m].SetOPs); m++ {
-				if operation.DeleteUniqueID == longestChain[i].SetOPs[m].UniqueID {
-					DeleteConfirmed = true
-				}
-			}
-		}
-
-		if DeleteConfirmed == false {
-			return blockartlib.ShapeOverlapError(operation.DeleteUniqueID)
-		}
-	}
-
-	// Checks for AddShape
-	if operation.OpType == "Add" {
-		// Validates the operation against duplicate signatures (UniqueID)
-		for j := len(longestChain); j > 1; j-- {
-
-			for k := 0; k < len(longestChain[j].SetOPs); k++ {
-
-				if operation.UniqueID == longestChain[j].SetOPs[k].UniqueID {
-					return blockartlib.ShapeOverlapError(longestChain[j].SetOPs[k].UniqueID)
-				}
-			}
-		}
-
-		// Validates the operation against the Ink Amount Check
-		for l := len(longestChain); l > 1; l-- {
-
-			if reflect.DeepEqual(longestChain[l].MinerPubKey, operation.ArtNodePubKey) {
-
-				if longestChain[l].InkBank-operation.OpInkCost < 0 {
-					return blockartlib.InsufficientInkError(operation.OpInkCost)
-				}
-			}
-		}
-	}
-	return nil
-}
-
 // HELPER FUNCTIONS
 
 // Initializes the heartbeat sends message to the server (message is the public key of miner so the server will remember it).
@@ -855,7 +749,7 @@ func SyncMinersLongestChain() {
 	for {
 		if len(connectedMiners) > 0 {
 
-			longestBlockChain := FindLongestBlockChain()
+			longestBlockChain := globalChain
 			blockList = longestBlockChain
 			var reply string
 
@@ -982,7 +876,7 @@ func (artkey *ArtKey) GetShapes(blockHash string, shapeHashes *[]string) error {
 }
 
 func (artKey *ArtKey) GetOperationWithShapeHash(shapeHash string, operation *Operation) error {
-	longestBlockChain := FindLongestBlockChain()
+	longestBlockChain := globalChain
 
 	for _, block := range longestBlockChain {
 		for _, op := range block.SetOPs {
@@ -1027,6 +921,7 @@ func main() {
 	// fmt.Println(settings)
 
 	blockList = append(blockList, Block{Hash: settings.GenesisBlockHash, PathLength: 1, IsEndBlock: true})
+	globalChain = FindLongestBlockChain()
 
 	/////////////////////////////////////////////
 	// VALIDATION TEXTING
