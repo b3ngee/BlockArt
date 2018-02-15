@@ -35,6 +35,19 @@ const (
 	// CIRCLE
 )
 
+type Block struct {
+	PreviousBlock  *Block
+	PreviousHash   string
+	Hash           string
+	SetOPs         []Operation
+	MinerPubKey    ecdsa.PublicKey
+	Nonce          uint32
+	TotalInkAmount uint32 // Total = Bank - Opcost (+ Reward when you mine the block)
+	InkBank        uint32 // Bank  = Previous block total (with same pubkey as yourself)
+	PathLength     int
+	IsEndBlock     bool
+}
+
 type Operation struct {
 	ShapeType     ShapeType
 	UniqueID      string
@@ -76,13 +89,13 @@ type ArtNodeKey struct {
 }
 
 type Line struct {
-	start Point
-	end   Point
+	Start Point
+	End   Point
 }
 
 type Point struct {
-	x float64
-	y float64
+	X float64
+	Y float64
 }
 
 // Settings for an instance of the BlockArt project/network.
@@ -268,9 +281,9 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 		return nil, setting, DisconnectedError(minerAddr)
 	}
 
-	r, s, _ := ecdsa.Sign(rand.Reader, &privKey, []byte("This is the Private Key."))
+	r, s, _ := ecdsa.Sign(rand.Reader, &privKey, []byte("This is the private key."))
 
-	err = cli.Call("ArtKey.ValidateKey", ArtNodeKey{R: r, S: s, Hash: []byte("This is the Private Key.")}, &setting)
+	err = cli.Call("ArtKey.ValidateKey", ArtNodeKey{R: r, S: s, Hash: []byte("This is the private key.")}, &setting)
 	if err != nil {
 		return nil, setting, DisconnectedError(minerAddr)
 	}
@@ -279,7 +292,10 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	canvasObj := CanvasObj{
 		MinerAddress: minerAddr,
 		PrivateKey:   privKey,
-		MinerCli:     cli}
+		MinerCli:     cli,
+	}
+
+	canvasSettings = setting
 
 	return canvasObj, setting, err
 }
@@ -370,9 +386,8 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 	inkReq := CalcInkUsed(boundCheck, fill)
 
 	nodePrivKey := canvasObj.PrivateKey
-	var reply bool
 
-	r, s, _ := ecdsa.Sign(rand.Reader, &nodePrivKey, []byte("This is the Private Key."))
+	r, s, _ := ecdsa.Sign(rand.Reader, &nodePrivKey, []byte("This is the private key."))
 
 	shapeHash = r.String() + s.String()
 
@@ -385,6 +400,7 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	linesToDraw := GetCoordinates(svgArray)
 
+	var reply Block
 	err = canvasObj.MinerCli.Call("ArtKey.AddShape", Operation{
 		UniqueID:       shapeHash,
 		ArtNodePubKey:  canvasObj.PrivateKey.PublicKey,
@@ -401,14 +417,15 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 		PathShape:      pathShape,
 	}, &reply)
 	if err != nil {
+		fmt.Println("AddShape RPC: ", err.Error())
 		return "", "", inkRemaining, DisconnectedError(address)
 	}
 
-	if reply == true {
-		return shapeHash, blockHash, inkRemaining, err
+	if reply.Hash == "" {
+		return "", "", 0, errors.New("Timed out, operation not validated")
 	}
 
-	return "", "", 0, errors.New("Timed out, operation not validated")
+	return shapeHash, reply.Hash, reply.TotalInkAmount, err
 }
 
 // Returns the encoding of the shape as an svg string.
@@ -466,7 +483,7 @@ func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (ink
 		return 0, DisconnectedError(address)
 	}
 
-	r, s, _ := ecdsa.Sign(rand.Reader, &canvasObj.PrivateKey, []byte("This is the Private Key."))
+	r, s, _ := ecdsa.Sign(rand.Reader, &canvasObj.PrivateKey, []byte("This is the private key."))
 
 	deleteOperation := Operation{
 		UniqueID:       r.String() + s.String(),
@@ -561,69 +578,69 @@ func GetCoordinates(svgArray []string) []Line {
 		case "M":
 			xp := ToFloat64(svgArray[i+1])
 			yp := ToFloat64(svgArray[i+2])
-			startPt = Point{x: xp, y: yp}
+			startPt = Point{X: xp, Y: yp}
 			origin = startPt
 			i = i + 2
 		case "m":
-			xp := ToFloat64(svgArray[i+1]) + startPt.x
-			yp := ToFloat64(svgArray[i+2]) + startPt.y
-			startPt = Point{x: xp, y: yp}
+			xp := ToFloat64(svgArray[i+1]) + startPt.X
+			yp := ToFloat64(svgArray[i+2]) + startPt.Y
+			startPt = Point{X: xp, Y: yp}
 			origin = startPt
 			i = i + 2
 		case "L":
 			xp := ToFloat64(svgArray[i+1])
 			yp := ToFloat64(svgArray[i+2])
-			endPt = Point{x: xp, y: yp}
+			endPt = Point{X: xp, Y: yp}
 
-			lines = append(lines, Line{start: startPt, end: endPt})
+			lines = append(lines, Line{Start: startPt, End: endPt})
 			startPt = endPt
 			i = i + 2
 		case "l":
-			xp := ToFloat64(svgArray[i+1]) + startPt.x
-			yp := ToFloat64(svgArray[i+2]) + startPt.y
-			endPt = Point{x: xp, y: yp}
+			xp := ToFloat64(svgArray[i+1]) + startPt.X
+			yp := ToFloat64(svgArray[i+2]) + startPt.Y
+			endPt = Point{X: xp, Y: yp}
 
-			lines = append(lines, Line{start: startPt, end: endPt})
+			lines = append(lines, Line{Start: startPt, End: endPt})
 			startPt = endPt
 			i = i + 2
 		case "H":
 			xp := ToFloat64(svgArray[i+1])
-			yp := startPt.y
-			endPt = Point{x: xp, y: yp}
+			yp := startPt.Y
+			endPt = Point{X: xp, Y: yp}
 
-			lines = append(lines, Line{start: startPt, end: endPt})
+			lines = append(lines, Line{Start: startPt, End: endPt})
 			startPt = endPt
 			i = i + 1
 		case "h":
-			xp := ToFloat64(svgArray[i+1]) + startPt.x
-			yp := startPt.y
-			endPt = Point{x: xp, y: yp}
+			xp := ToFloat64(svgArray[i+1]) + startPt.X
+			yp := startPt.Y
+			endPt = Point{X: xp, Y: yp}
 
-			lines = append(lines, Line{start: startPt, end: endPt})
+			lines = append(lines, Line{Start: startPt, End: endPt})
 			startPt = endPt
 			i = i + 1
 		case "V":
-			xp := startPt.x
+			xp := startPt.X
 			yp := ToFloat64(svgArray[i+1])
-			endPt = Point{x: xp, y: yp}
+			endPt = Point{X: xp, Y: yp}
 
-			lines = append(lines, Line{start: startPt, end: endPt})
+			lines = append(lines, Line{Start: startPt, End: endPt})
 			startPt = endPt
 			i = i + 1
 		case "v":
-			xp := startPt.x
-			yp := ToFloat64(svgArray[i+1]) + startPt.y
-			endPt = Point{x: xp, y: yp}
+			xp := startPt.X
+			yp := ToFloat64(svgArray[i+1]) + startPt.Y
+			endPt = Point{X: xp, Y: yp}
 
-			lines = append(lines, Line{start: startPt, end: endPt})
+			lines = append(lines, Line{Start: startPt, End: endPt})
 			startPt = endPt
 			i = i + 1
 		case "Z":
 			endPt = origin
-			lines = append(lines, Line{start: startPt, end: endPt})
+			lines = append(lines, Line{Start: startPt, End: endPt})
 		case "z":
 			endPt = origin
-			lines = append(lines, Line{start: startPt, end: endPt})
+			lines = append(lines, Line{Start: startPt, End: endPt})
 		}
 	}
 
@@ -642,14 +659,14 @@ func CalcInkUsed(lines []Line, fill string) uint32 {
 	inkTotal = 0
 
 	for i := 0; i < len(lines); i++ {
-		xstart := lines[i].start
-		xspos := xstart.x
-		ystart := lines[i].start
-		yspos := ystart.y
-		xend := lines[i].end
-		xepos := xend.x
-		yend := lines[i].end
-		yepos := yend.y
+		xstart := lines[i].Start
+		xspos := xstart.X
+		ystart := lines[i].Start
+		yspos := ystart.Y
+		xend := lines[i].End
+		xepos := xend.X
+		yend := lines[i].End
+		yepos := yend.Y
 
 		distance := math.Pow(float64(xspos)-float64(xepos), 2) + math.Pow(float64(yspos)-float64(yepos), 2)
 		rootDis := math.Sqrt(distance)
@@ -661,7 +678,7 @@ func CalcInkUsed(lines []Line, fill string) uint32 {
 	if fill != "transparent" {
 		points := []Point{}
 		for i := 0; i < len(lines); i++ {
-			points = append(points, lines[i].start)
+			points = append(points, lines[i].Start)
 
 		}
 		areaInk := PolygonArea(points)
@@ -681,7 +698,7 @@ func PolygonArea(points []Point) float64 {
 
 	for i, _ := range points {
 		next := points[i]
-		area = area + next.x*last.y - last.x*next.y
+		area = area + next.X*last.Y - last.X*next.Y
 		last = next
 	}
 	return area / 2
@@ -786,16 +803,15 @@ func isNum(svgNum string) bool {
 
 // checks the boundary settings for the position of shape, EX "M 0 10 H 20" checks 0 and 10
 func BoundCheck(lines []Line) bool {
-
 	for i := 0; i < len(lines); i++ {
-		xstart := lines[i].start
-		xspos := xstart.x
-		ystart := lines[i].start
-		yspos := ystart.y
-		xend := lines[i].end
-		xepos := xend.x
-		yend := lines[i].end
-		yepos := yend.y
+		xstart := lines[i].Start
+		xspos := xstart.X
+		ystart := lines[i].Start
+		yspos := ystart.Y
+		xend := lines[i].End
+		xepos := xend.X
+		yend := lines[i].End
+		yepos := yend.Y
 
 		if xspos > float64(canvasSettings.CanvasXMax) {
 			return false

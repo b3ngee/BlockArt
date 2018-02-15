@@ -70,13 +70,11 @@ type Block struct {
 }
 
 type Operation struct {
-	ShapeType     blockartlib.ShapeType
-	UniqueID      string
-	ArtNodePubKey ecdsa.PublicKey
-	OPSigR        *big.Int
-	OPSigS        *big.Int
-
-	//Adding some new fields that could come in handy trying to validate
+	ShapeType      blockartlib.ShapeType
+	UniqueID       string
+	ArtNodePubKey  ecdsa.PublicKey
+	OPSigR         *big.Int
+	OPSigS         *big.Int
 	ValidateNum    int
 	ShapeSvgString string
 	Fill           string
@@ -89,13 +87,13 @@ type Operation struct {
 }
 
 type Line struct {
-	start Point
-	end   Point
+	Start Point
+	End   Point
 }
 
 type Point struct {
-	x float64
-	y float64
+	X float64
+	Y float64
 }
 
 type LongestBlockChain struct {
@@ -153,6 +151,7 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain *LongestBloc
 	ownLongestBlockChain := globalChain
 	var err error
 
+	fmt.Println("BEFORE SYNC: ", operations)
 	// replace own blockList and send to neighbours
 	if len(longestBlockChain.BlockChain) > len(ownLongestBlockChain) {
 		blockList = longestBlockChain.BlockChain
@@ -195,6 +194,7 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain *LongestBloc
 			err = nil
 		}
 	}
+	fmt.Println("AFTER SYNC: ", operations)
 
 	return err
 }
@@ -241,7 +241,7 @@ func (artkey *ArtKey) ValidateKey(artNodeKey *blockartlib.ArtNodeKey, canvasSett
 	return nil
 }
 
-func (artkey *ArtKey) AddShape(operation Operation, reply *bool) error {
+func (artkey *ArtKey) AddShape(operation Operation, reply *Block) error {
 	longestBlockChain := globalChain
 
 	err := ValidateOperationForLongestChain(operation, longestBlockChain)
@@ -262,7 +262,12 @@ func (artkey *ArtKey) AddShape(operation Operation, reply *bool) error {
 		}
 	}
 
-	CheckOperationValidation(operation.UniqueID)
+	// put reply as return type of below
+	block, valid := CheckOperationValidation(operation.UniqueID)
+
+	if valid {
+		*reply = block
+	}
 
 	return nil
 }
@@ -278,6 +283,7 @@ func (artkey *ArtKey) GetInk(empty string, inkAmount *uint32) error {
 	return nil
 }
 
+// UNUSED
 func GetInkAmount(prevBlock *Block) uint32 {
 	temp := *prevBlock
 	for i := prevBlock.PathLength; i > 1; i-- {
@@ -291,6 +297,8 @@ func GetInkAmount(prevBlock *Block) uint32 {
 }
 
 func GenerateBlock() {
+	// FOR TESTING
+	// go printBlockChain()
 	for {
 		var difficulty int
 		var isNoOp bool
@@ -325,7 +333,7 @@ func GenerateBlock() {
 
 		globalChain = FindBlockChainPath(*prevBlock)
 
-		prevBlockHash := *prevBlock.Hash
+		prevBlockHash := (*prevBlock).Hash
 		newBlock.PreviousHash = prevBlockHash
 
 		zeroString := strings.Repeat("0", difficulty)
@@ -392,7 +400,7 @@ func CheckIntersectionWithinOp(operations []Operation) bool {
 				for _, line1 := range operations[i].Lines {
 					//each line of op1 is compared against op2's lines
 					for _, line2 := range operations[j].Lines {
-						if CheckIntersectionLines(line1.start, line1.end, line2.start, line2.end) {
+						if CheckIntersectionLines(line1.Start, line1.End, line2.Start, line2.End) {
 							return true
 						}
 					}
@@ -410,13 +418,13 @@ func CheckIntersection(operation Operation) error {
 	blockChain := globalChain
 	for _, line := range operation.Lines {
 		deletes := []Operation{}
-		start := line.start
-		end := line.end
+		start := line.Start
+		end := line.End
 		for k := 0; k < len(blockChain); k++ {
 			for _, op := range blockChain[k].SetOPs {
 				for _, opLine := range op.Lines {
-					opStart := opLine.start
-					opEnd := opLine.end
+					opStart := opLine.Start
+					opEnd := opLine.End
 					if CheckIntersectionLines(start, end, opStart, opEnd) && operation.ArtNodePubKey != op.ArtNodePubKey {
 						if op.OpType == "Add" {
 							exists := false
@@ -462,7 +470,7 @@ func CheckIntersectionLines(p1 Point, p2 Point, p3 Point, p4 Point) bool {
 // 2 -> Clockwise
 // 3 -> Counterclockwise
 func Orientation(c1 Point, c2 Point, c3 Point) int {
-	val := (c2.y-c1.y)*(c3.x-c2.x) - (c2.x-c1.x)*(c3.y-c2.y)
+	val := (c2.Y-c1.Y)*(c3.X-c2.X) - (c2.X-c1.X)*(c3.Y-c2.Y)
 
 	if val == 0 {
 		return 0
@@ -506,7 +514,7 @@ func FindBlockChainPath(block Block) []Block {
 	tempBlock := block
 	path := []Block{}
 
-	for i := block.PathLength; i >= 1; i-- {
+	for i := block.PathLength; i > 1; i-- {
 		path = append(path, tempBlock)
 		tempBlock = *tempBlock.PreviousBlock
 	}
@@ -515,27 +523,21 @@ func FindBlockChainPath(block Block) []Block {
 	return path
 }
 
-// TODO: INCOMPLETE?
 // send out the block information to peers in the connected network of miners
 func SendBlockInfo(block Block) error {
-
 	replyStr := ""
-
 	for key, miner := range connectedMiners {
-
-		err := miner.Cli.Call("MinerKey.ReceiveBlock", block, replyStr)
-
+		err := miner.Cli.Call("MinerKey.ReceiveBlock", block, &replyStr)
 		if err != nil {
+			fmt.Println("Connection error in SendBlockInfo: ", err.Error())
 			delete(connectedMiners, key)
 		}
-
 	}
-	return errors.New("Parse error")
+	return nil
 }
 
 // once information about a block is received unpack that message and update ink-miner
-func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
-	receivedBlock := *block
+func (minerKey *MinerKey) ReceiveBlock(receivedBlock Block, reply *string) error {
 	hash := receivedBlock.Hash
 	previousHash := receivedBlock.PreviousHash
 	operations := receivedBlock.SetOPs
@@ -549,25 +551,25 @@ func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 	var previousBlock *Block
 	if prevBlock, exists := CheckPreviousBlock(previousHash); exists {
 		previousBlock = prevBlock
-		fmt.Println("Block exists within the blockchain")
 	} else {
-		return errors.New("failed to validate hash of a previous block")
+		return errors.New("Failed to validate hash of a previous block")
 	}
 
 	// Check if received block is a No-Op or Op block based on length of operations
-
 	if len(operations) == 0 {
-		if ComputeTrailingZeroes(hash, settings.PoWDifficultyNoOpBlock) {
-		} else {
-			return errors.New("No-op block proof of work does not match the zeroes of nonce")
+		if !ComputeTrailingZeroes(hash, settings.PoWDifficultyNoOpBlock) {
+			return errors.New("No-op block proof of work does not match the zeroes")
 		}
 	} else {
 		if ComputeTrailingZeroes(hash, settings.PoWDifficultyOpBlock) {
-			for _, operation := range receivedBlock.SetOPs {
-				ValidateOperationForLongestChain(operation, globalChain)
+			for _, op := range operations {
+				err := ValidateOperationForLongestChain(op, globalChain)
+				if err != nil {
+					return errors.New("Block contains operations that failed to validate")
+				}
 			}
 		} else {
-			return errors.New("No-op block proof of work does not match the zeroes of nonce")
+			return errors.New("Op block proof of work does not match the zeroes")
 		}
 	}
 
@@ -575,7 +577,7 @@ func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 	receivedBlock.PathLength = previousBlock.PathLength + 1
 	receivedBlock.PreviousBlock = previousBlock
 	receivedBlock.InkBank = previousBlock.TotalInkAmount
-	receivedBlock.TotalInkAmount = receivedBlock.InkBank // TODO: minus any operations performed for the generator of this block
+	receivedBlock.TotalInkAmount = receivedBlock.InkBank - ComputeOpCostForMiner(receivedBlock.MinerPubKey, operations) // minus any operations performed by the miner that generated this block
 	previousBlock.IsEndBlock = false
 
 	if len(operations) == 0 {
@@ -585,9 +587,9 @@ func (minerKey *MinerKey) ReceiveBlock(block *Block, reply *string) error {
 	}
 
 	blockList = append(blockList, receivedBlock)
-	err := SendBlockInfo(receivedBlock)
+	SendBlockInfo(receivedBlock)
 
-	return err
+	return nil
 }
 
 func ExistInLocalBlockchain(blockHash string) bool {
@@ -601,14 +603,10 @@ func ExistInLocalBlockchain(blockHash string) bool {
 }
 
 // returns a boolean true if hash contains specified number of zeroes num at the end
-func ComputeTrailingZeroes(hash string, num uint8) bool {
-	var numZeroesStr = ""
-	for i := 1; i <= int(num); i++ {
-		numZeroesStr += "0"
-	}
-	// HARDCODED FOR NOW NEED TO FIX IT REAL EASY JUST NEED TO GET MINER SETTINGS
-	numZeroesStr = "00000"
-	if strings.HasSuffix(hash, numZeroesStr) {
+func ComputeTrailingZeroes(hash string, numOfZero uint8) bool {
+	zeroString := strings.Repeat("0", int(numOfZero))
+
+	if strings.HasSuffix(hash, zeroString) {
 		return true
 	}
 	return false
@@ -622,9 +620,20 @@ func CheckPreviousBlock(hash string) (*Block, bool) {
 			blockPtr = &blockList[i]
 			return blockPtr, true
 		}
-		continue
 	}
 	return blockPtr, false
+}
+
+// compute the total cost of operations for the current miner
+func ComputeOpCostForMiner(publicKey ecdsa.PublicKey, operations []Operation) uint32 {
+	var cost uint32
+	for _, op := range operations {
+		if reflect.DeepEqual(publicKey, op.ArtNodePubKey) {
+			cost = cost + op.OpInkCost
+		}
+	}
+
+	return cost
 }
 
 // call this for op-blocks to validate the op-block
@@ -634,9 +643,10 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 	// need clarification from you guys
 	// Check that each operation in the block has a valid signature
 
-	if !ecdsa.Verify(&operation.ArtNodePubKey, []byte("This is the private key"), operation.OPSigR, operation.OPSigS) {
-		return errors.New("Failed to validate operation signature")
-	}
+	// CHECK THIS: DON'T THINK IT'S RIGHT
+	// if !ecdsa.Verify(&operation.ArtNodePubKey, []byte("This is the private key"), operation.OPSigR, operation.OPSigS) {
+	// 	return errors.New("Failed to validate operation signature")
+	// }
 
 	// Checks for DeleteShape
 	if operation.OpType == "Delete" {
@@ -702,9 +712,10 @@ func InitHeartbeat(cli *rpc.Client, pubKey ecdsa.PublicKey, heartBeat uint32) {
 // Checks if the address already exists in ConnectedMiners map, it will skip connecting to them again.
 func ConnectToMiners(addrSet []net.Addr, currentAddress net.Addr, currentPubKey ecdsa.PublicKey) {
 	for i := 0; i < len(addrSet); i++ {
+		addr := addrSet[i].String()
 
-		if _, ok := connectedMiners[addrSet[i].String()]; !ok {
-			cli, err := rpc.Dial("tcp", addrSet[i].String())
+		if _, ok := connectedMiners[addr]; !ok {
+			cli, err := rpc.Dial("tcp", addr)
 
 			var reply MinerInfo
 			err = cli.Call("MinerKey.RegisterMiner", MinerInfo{Address: currentAddress, Key: currentPubKey}, &reply)
@@ -728,7 +739,7 @@ func GetNodes(cli *rpc.Client, minNumberConnections int) {
 			ConnectToMiners(addrSet, minerAddr, pubKey)
 		}
 
-		time.Sleep(30000 * time.Millisecond)
+		time.Sleep(7000 * time.Millisecond)
 	}
 }
 
@@ -768,6 +779,7 @@ func SyncMinersLongestChain() {
 }
 
 // Gets the Max Validate Number for a block using set of operations inside it.
+// UNUSED
 func GetMaxValidateNum(operations []Operation) int {
 	maxValidateNum := 0
 	for i := 0; i < len(operations); i++ {
@@ -778,13 +790,13 @@ func GetMaxValidateNum(operations []Operation) int {
 	return maxValidateNum
 }
 
-// Checks whether or not operations are validated or not (check validateNum against the block)
-func CheckOperationValidation(uniqueID string) bool {
+// Checks whether or not operations are validated or not and returns block where op is in (check validateNum against the block)
+func CheckOperationValidation(uniqueID string) (Block, bool) {
 	timeOut := 0
 	for {
 		// Times out, sends reply back (3 mins currently)
 		if timeOut == 36 {
-			return false
+			return Block{}, false
 		}
 
 		// blockToCheck is the block that contains the checked Operation
@@ -809,7 +821,7 @@ func CheckOperationValidation(uniqueID string) bool {
 		endBlock := Block{}
 
 		// Goes through each end blocks to find the one that consists blockToCheck
-		for k := len(blockList); k > 0; k-- {
+		for k := len(blockList) - 1; k > 0; k-- {
 
 			if blockList[k].IsEndBlock == true {
 
@@ -826,8 +838,9 @@ func CheckOperationValidation(uniqueID string) bool {
 
 		if endBlock.Hash != "" {
 			// Stop the infinite for loop when we find something to send back to the Art Node
-			if endBlock.PathLength-blockToCheck.PathLength >= opToCheck.ValidateNum {
-				return true
+			// if endBlock.PathLength-blockToCheck.PathLength >= opToCheck.ValidateNum {
+			if endBlock.PathLength-blockToCheck.PathLength >= 0 {
+				return blockToCheck, true
 			}
 		}
 
@@ -949,7 +962,8 @@ func (artkey *ArtKey) ValidateDelete(operation Operation, reply *bool) error {
 		}
 	}
 
-	*reply = CheckOperationValidation(operation.UniqueID)
+	_, valid := CheckOperationValidation(operation.UniqueID)
+	*reply = valid
 
 	for i := 0; i < len(longestBlockChain); i++ {
 		block := longestBlockChain[i]
@@ -1007,6 +1021,12 @@ func main() {
 
 	GenerateBlock()
 }
+
+// FOR TESTING
+// func printBlockChain() {
+// 	time.Sleep(2 * time.Minute)
+// 	fmt.Println(blockList)
+// }
 
 func HandleError(err error) {
 	if err != nil {
