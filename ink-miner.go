@@ -1025,6 +1025,8 @@ func main() {
 
 	go GetNodes(cli, int(settings.MinNumMinerConnections))
 
+	go SyncMinersLongestChain()
+
 	GenerateBlock(settings)
 }
 
