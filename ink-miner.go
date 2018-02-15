@@ -634,7 +634,7 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 	// need clarification from you guys
 	// Check that each operation in the block has a valid signature
 
-	if !ecdsa.Verify(&operation.ArtNodePubKey, []byte("This is private key"), operation.OPSigR, operation.OPSigS) {
+	if !ecdsa.Verify(&operation.ArtNodePubKey, []byte("This is the private key"), operation.OPSigR, operation.OPSigS) {
 		return errors.New("Failed to validate operation signature")
 	}
 
