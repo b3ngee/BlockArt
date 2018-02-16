@@ -864,7 +864,7 @@ func ReverseArray(reverseThis []Block) {
 
 // Checks whether or not operations are validated or not and returns block where op is in (check validateNum against the block)
 func CheckOperationValidation(uniqueID string) (Block, bool) {
-	//timeOut := 0
+	timeOut := 0
 
 	// blockToCheck is the block that contains the checked Operation
 	blockToCheck := Block{}
@@ -872,10 +872,10 @@ func CheckOperationValidation(uniqueID string) (Block, bool) {
 	foundBlock := false
 
 	for {
-		// Times out, sends reply back (3 mins currently)
-		// if timeOut == 36 {
-		// 	return Block{}, false
-		// }
+		// Times out, sends reply back (1 mins currently)
+		if timeOut == 30 {
+			return Block{}, false
+		}
 
 		// Get the block that we need (where the operation is in)
 		if !foundBlock {
@@ -914,8 +914,8 @@ func CheckOperationValidation(uniqueID string) (Block, bool) {
 			}
 		}
 
-		time.Sleep(5 * time.Second)
-		//timeOut = timeOut + 1
+		time.Sleep(2 * time.Second)
+		timeOut = timeOut + 1
 	}
 }
 
