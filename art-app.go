@@ -22,7 +22,7 @@ import (
 )
 
 func main() {
-	minerAddr := "[::]:65214"
+	minerAddr := "[::]:53763"
 	// privKey := // TODO: use crypto/ecdsa to read pub/priv keys from a file argument.
 
 	privateKeyBytesRestored, _ := hex.DecodeString(os.Args[1])
@@ -36,42 +36,41 @@ func main() {
 
 	validateNum := uint8(2)
 
-	time.Sleep(30 * time.Second)
-
 	// Add a line.
-	shapeHash, blockHash, ink, err := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 0 L 1000 0 L 0 1000 Z", "blue", "red")
-	if checkError(err) != nil {
-		return
+	shapeHash1, blockHash1, ink1, err1 := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 0 L 10 0 L 10 10 L 0 10 Z", "transparent", "red")
+	if checkError(err1) != nil {
+		fmt.Print("First add error")
 	}
 
-	fmt.Println("ShapeHash: ", shapeHash)
-	fmt.Println("BlockHash: ", blockHash)
-	fmt.Println("Ink: ", ink)
+	fmt.Println("ShapeHash: ", shapeHash1)
+	fmt.Println("BlockHash: ", blockHash1)
+	fmt.Println("Ink: ", ink1)
 
-	// time.Sleep(30 * time.Second)
+	time.Sleep(5 * time.Second)
 
-	// shapeHash1, blockHash1, ink1, err := canvas.AddShape(validateNum, blockartlib.PATH, "M 300 300 L 500 300 L 500 500 z", "blue", "red")
-	// if checkError(err) != nil {
-	// 	return
-	// }
+	shapeHash2, _, _, err2 := canvas.AddShape(validateNum, blockartlib.PATH, "M 300 300 L 900 300 L 500 500 z", "blue", "red")
+	if checkError(err2) != nil {
+		fmt.Println("Should not have enough ink")
+	}
 
-	// fmt.Println("ShapeHash: ", shapeHash1)
-	// fmt.Println("BlockHash: ", blockHash1)
-	// fmt.Println("Ink: ", ink1)
+	time.Sleep(5 * time.Second)
 
-	// // Add another line.
-	// shapeHash2, blockHash2, ink2, err := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 0 L 5 0", "transparent", "blue")
-	// if checkError(err) != nil {
-	// 	return
-	// }
+	_, _, _, err3 := canvas.AddShape(validateNum, blockartlib.PATH, "M 5 0 L 0 50", "transparent", "green")
+	if checkError(err3) != nil {
+		fmt.Println("Should intersect first shape")
+	}
 
-	// // Delete the first line.
-	// ink3, err := canvas.DeleteShape(validateNum, shapeHash)
-	// if checkError(err) != nil {
-	// 	return
-	// }
+	_, err4 := canvas.DeleteShape(validateNum, shapeHash2)
+	if checkError(err4) != nil {
+		fmt.Println("Cannot delete second shape because it was never added")
+	}
 
-	// // assert ink3 > ink2
+	ink5, err5 := canvas.DeleteShape(validateNum, shapeHash1)
+	if checkError(err5) != nil {
+		fmt.Println("Should have deleted first shape, something went wrong")
+	}
+
+	fmt.Println("Ink after delete: ", ink5)
 
 	// // Close the canvas.
 	// ink4, err := canvas.CloseCanvas()
@@ -79,7 +78,7 @@ func main() {
 	// 	return
 	// }
 
-	time.Sleep(1 * time.Minute)
+	time.Sleep(2 * time.Minute)
 
 	svgs, _ := blockartlib.GetAllSVGs(canvas)
 	blockartlib.CreateCanvasHTML(svgs, settings)

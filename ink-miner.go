@@ -116,6 +116,7 @@ var connectedMiners = make(map[string]Miner)
 // var connectedArtNodeMap = make(map[string]ArtNodeInfo)
 
 // Keeps track of all blocks generated
+// GenesisBlock is at the start of the block
 var blockList = []Block{}
 
 // Queue of incoming operations
@@ -124,6 +125,7 @@ var operations = []Operation{}
 // Operations that are seen already (consists of unique shape hash)
 var operationsHistory = make([]string, 0)
 
+// GenesisBlock is at the end of the block
 var globalChain []Block
 
 // FUNCTION CALLS
@@ -138,6 +140,34 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) 
 	*reply = MinerInfo{Address: minerAddr, Key: pubKey}
 
 	return err
+}
+
+// Checks blocklist against longest chain and find unvalidated operations in the shorter chain.
+// Moves the unvalidated operation to the operations queue when it finds them.
+func checkUnvalidatedOperation() {
+	for i := len(blockList); i > 0; i-- {
+
+		if blockList[i].IsEndBlock && (blockList[i].Hash != globalChain[0].Hash) {
+
+			shorterChain := FindBlockChainPath(blockList[i])
+
+			for j := 0; j < len(shorterChain); j++ {
+
+				for k := 0; k < len(shorterChain[j].SetOPs); k++ {
+
+					// Compares the end block path length and the path length of the block that has the current operation
+					if (shorterChain[0].PathLength - shorterChain[j].PathLength) < shorterChain[j].SetOPs[k].ValidateNum {
+
+						// If it is validated, append to operations queue. Otherwise, drop it and let timeout handle the case.
+						err := ValidateOperationForLongestChain(shorterChain[j].SetOPs[k], globalChain)
+						if err == nil {
+							operations = append(operations, shorterChain[j].SetOPs[k])
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 // Updates the longest block chain in the Miner Network.
@@ -164,6 +194,9 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain LongestBlock
 			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain.BlockChain}, &reply)
 		}
 	} else if len(longestBlockChain.BlockChain) < len(ownLongestBlockChain) {
+
+		// Calls Helper function to take care of edge case where there are unvalidated OP blocks in shorter chain
+		// checkUnValidatedOperation()
 
 		// send own longest blockchain to neighbours
 		for _, miner := range connectedMiners {
@@ -701,14 +734,10 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 
 		// Validates the operation against the Ink Amount Check
 		for l := len(longestChain) - 1; l >= 0; l-- {
-			fmt.Println("checking ink...")
-			fmt.Println("MinerPubKey: ", longestChain[l].MinerPubKey)
-			fmt.Println("ArtNodePubKey: ", operation.ArtNodePubKey)
 			if reflect.DeepEqual(longestChain[l].MinerPubKey, operation.ArtNodePubKey) {
 				fmt.Println("found a match, opcost: ", operation.OpInkCost)
 				fmt.Println("Longest chain ink bank: ", longestChain[l].InkBank)
 				difference := int(longestChain[l].InkBank) - int(operation.OpInkCost)
-				fmt.Println("Difference: ", difference)
 				if difference < 0 {
 					fmt.Println("Failed on Ink")
 					return blockartlib.InsufficientInkError(longestChain[l].InkBank)
@@ -812,73 +841,60 @@ func ReverseArray(reverseThis []Block) {
 	}
 }
 
-// Gets the Max Validate Number for a block using set of operations inside it.
-// UNUSED
-func GetMaxValidateNum(operations []Operation) int {
-	maxValidateNum := 0
-	for i := 0; i < len(operations); i++ {
-		if operations[i].ValidateNum > maxValidateNum {
-			maxValidateNum = operations[i].ValidateNum
-		}
-	}
-	return maxValidateNum
-}
-
 // Checks whether or not operations are validated or not and returns block where op is in (check validateNum against the block)
 func CheckOperationValidation(uniqueID string) (Block, bool) {
-	timeOut := 0
+	//timeOut := 0
+
+	// blockToCheck is the block that contains the checked Operation
+	blockToCheck := Block{}
+	opToCheck := Operation{}
+	foundBlock := false
+
 	for {
 		// Times out, sends reply back (3 mins currently)
-		if timeOut == 36 {
-			return Block{}, false
-		}
-
-		// blockToCheck is the block that contains the checked Operation
-		blockToCheck := Block{}
-		opToCheck := Operation{}
+		// if timeOut == 36 {
+		// 	return Block{}, false
+		// }
 
 		// Get the block that we need (where the operation is in)
-		for i := 0; i < len(blockList); i++ {
-			opList := blockList[i].SetOPs
+		if !foundBlock {
+			for i := 0; i < len(blockList); i++ {
+				opList := blockList[i].SetOPs
 
-			for j := 0; j < len(opList); j++ {
+				for j := 0; j < len(opList); j++ {
 
-				if opList[j].UniqueID == uniqueID {
-					blockToCheck = blockList[i]
-					opToCheck = opList[j]
-					break
-				}
-			}
-		}
-
-		// Tail block of the blockChain that consists of blockToCheck
-		endBlock := Block{}
-
-		// Goes through each end blocks to find the one that consists blockToCheck
-		for k := len(blockList) - 1; k > 0; k-- {
-
-			if blockList[k].IsEndBlock == true {
-
-				blockChain := FindBlockChainPath(blockList[k])
-				for l := 0; l < len(blockChain); l++ {
-
-					if blockChain[l].Hash == blockToCheck.Hash {
-						endBlock = blockList[k]
+					if opList[j].UniqueID == uniqueID {
+						foundBlock = true
+						blockToCheck = blockList[i]
+						opToCheck = opList[j]
 						break
 					}
 				}
 			}
 		}
 
-		if endBlock.Hash != "" {
-			// Stop the infinite for loop when we find something to send back to the Art Node
-			if endBlock.PathLength-blockToCheck.PathLength >= opToCheck.ValidateNum {
-				return blockToCheck, true
+		if foundBlock {
+			// Goes through each end blocks to find the one that consists blockToCheck
+			for k := len(blockList) - 1; k > 0; k-- {
+
+				if blockList[k].IsEndBlock == true {
+
+					blockChain := FindBlockChainPath(blockList[k])
+					for l := 0; l < len(blockChain); l++ {
+
+						if blockChain[l].Hash == blockToCheck.Hash {
+							if blockList[k].PathLength-blockChain[l].PathLength >= opToCheck.ValidateNum {
+								return blockToCheck, true
+							}
+							break
+						}
+					}
+				}
 			}
 		}
 
 		time.Sleep(5 * time.Second)
-		timeOut = timeOut + 1
+		//timeOut = timeOut + 1
 	}
 }
 
@@ -1057,8 +1073,10 @@ func main() {
 
 // FOR TESTING
 func printBlockChain() {
-	time.Sleep(2 * time.Minute)
-	fmt.Println(blockList)
+	for {
+		time.Sleep(90 * time.Second)
+		fmt.Println(globalChain)
+	}
 }
 
 func HandleError(err error) {
