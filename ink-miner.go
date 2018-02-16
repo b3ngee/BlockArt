@@ -342,12 +342,13 @@ func GenerateBlock() {
 		var difficulty int
 		var isNoOp bool
 		var prevBlock *Block
+		var copyOfOps []Operation
 
 		newBlock := Block{Nonce: 0, MinerPubKey: pubKey}
 
 		if len(operations) > 0 {
 			isNoOp = false
-			copyOfOps := make([]Operation, len(operations))
+			copyOfOps = make([]Operation, len(operations))
 			copy(copyOfOps, operations)
 			operations = operations[:0]
 
@@ -391,6 +392,20 @@ func GenerateBlock() {
 			if zeroString == subString {
 				newBlock.Hash = hash
 				newBlock.IsEndBlock = true
+				newBlock.PathLength = prevBlock.PathLength + 1
+				newBlock.PreviousBlock = prevBlock
+				newBlock.InkBank = prevBlock.TotalInkAmount
+				newBlock.TotalInkAmount = newBlock.InkBank + ComputeOpCostForMiner(newBlock.MinerPubKey, copyOfOps)
+				prevBlock.IsEndBlock = false
+
+				if len(copyOfOps) == 0 {
+					newBlock.TotalInkAmount = newBlock.TotalInkAmount + settings.InkPerNoOpBlock
+				} else {
+					newBlock.TotalInkAmount = newBlock.TotalInkAmount + settings.InkPerOpBlock
+				}
+
+				blockList = append(blockList, newBlock)
+				globalChain = FindLongestBlockChain()
 
 				SendBlockInfo(newBlock)
 				break

@@ -22,7 +22,7 @@ import (
 )
 
 func main() {
-	minerAddr := "[::]:53763"
+	minerAddr := "[::]:57174"
 	// privKey := // TODO: use crypto/ecdsa to read pub/priv keys from a file argument.
 
 	privateKeyBytesRestored, _ := hex.DecodeString(os.Args[1])
