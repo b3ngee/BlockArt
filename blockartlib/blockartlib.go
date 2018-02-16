@@ -293,6 +293,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	r, s, _ := ecdsa.Sign(rand.Reader, &privKey, []byte("This is the private key!"))
 
 	err = cli.Call("ArtKey.ValidateKey", ArtNodeKey{ArtNodeID: artNodeID, R: r, S: s, Hash: []byte("This is the private key!")}, &setting)
+
 	if err != nil {
 		return nil, setting, DisconnectedError(minerAddr)
 	}
@@ -694,10 +695,12 @@ func CalcInkUsed(lines []Line, fill string) uint32 {
 
 		}
 		areaInk := PolygonArea(points)
+		areaInk = math.Abs(areaInk)
 		inkTotal = areaInk + inkTotal
 	}
 
 	inkTotal = round(inkTotal)
+	fmt.Println("this is ink total used in addShape", inkTotal)
 
 	return uint32(inkTotal)
 

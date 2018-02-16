@@ -269,7 +269,7 @@ func (minerKey *MinerKey) ReceiveOperation(operation Operation, reply *bool) err
 	return nil
 }
 
-func (artkey *ArtKey) ValidateKey(artNodeKey *blockartlib.ArtNodeKey, canvasSettings *blockartlib.CanvasSettings) error {
+func (artkey *ArtKey) ValidateKey(artNodeKey blockartlib.ArtNodeKey, canvasSettings *blockartlib.CanvasSettings) error {
 
 	if ecdsa.Verify(&pubKey, artNodeKey.Hash, artNodeKey.R, artNodeKey.S) == true {
 		*canvasSettings = settings.CanvasSettings
@@ -468,7 +468,7 @@ func CheckIntersection(operation Operation) error {
 				for _, opLine := range op.Lines {
 					opStart := opLine.Start
 					opEnd := opLine.End
-					if CheckIntersectionLines(start, end, opStart, opEnd) && operation.ArtNodePubKey != op.ArtNodePubKey {
+					if CheckIntersectionLines(start, end, opStart, opEnd) && operation.ArtNodeID != op.ArtNodeID {
 						if op.OpType == "Add" {
 							exists := false
 							for i, delOp := range deletes {
@@ -696,7 +696,6 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 
 	// CHECK THIS: DON'T THINK IT'S RIGHT
 	if !ecdsa.Verify(&operation.ArtNodePubKey, []byte("This is the private key!"), operation.OPSigR, operation.OPSigS) {
-		fmt.Println("THIS IS STILL BROKEN!")
 		return errors.New("Failed to validate operation signature")
 	}
 
@@ -734,14 +733,16 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 		}
 
 		// Validates the operation against the Ink Amount Check
-		for l := 0; l < len(longestChain); l++ {
-
+		for l := len(longestChain) - 1; l >= 0; l-- {
 			if reflect.DeepEqual(longestChain[l].MinerPubKey, operation.ArtNodePubKey) {
-
-				if longestChain[l].InkBank-operation.OpInkCost < 0 {
+				fmt.Println("found a match, opcost: ", operation.OpInkCost)
+				fmt.Println("Longest chain ink bank: ", longestChain[l].InkBank)
+				difference := int(longestChain[l].InkBank) - int(operation.OpInkCost)
+				if difference < 0 {
 					fmt.Println("Failed on Ink")
 					return blockartlib.InsufficientInkError(longestChain[l].InkBank)
 				}
+				break
 			}
 		}
 	}
@@ -842,59 +843,58 @@ func ReverseArray(reverseThis []Block) {
 
 // Checks whether or not operations are validated or not and returns block where op is in (check validateNum against the block)
 func CheckOperationValidation(uniqueID string) (Block, bool) {
-	timeOut := 0
+	//timeOut := 0
+
+	// blockToCheck is the block that contains the checked Operation
+	blockToCheck := Block{}
+	opToCheck := Operation{}
+	foundBlock := false
+
 	for {
 		// Times out, sends reply back (3 mins currently)
-		if timeOut == 36 {
-			return Block{}, false
-		}
-
-		// blockToCheck is the block that contains the checked Operation
-		blockToCheck := Block{}
-		opToCheck := Operation{}
+		// if timeOut == 36 {
+		// 	return Block{}, false
+		// }
 
 		// Get the block that we need (where the operation is in)
-		for i := 0; i < len(blockList); i++ {
-			opList := blockList[i].SetOPs
+		if !foundBlock {
+			for i := 0; i < len(blockList); i++ {
+				opList := blockList[i].SetOPs
 
-			for j := 0; j < len(opList); j++ {
+				for j := 0; j < len(opList); j++ {
 
-				if opList[j].UniqueID == uniqueID {
-					blockToCheck = blockList[i]
-					opToCheck = opList[j]
-					break
-				}
-			}
-		}
-
-		// Tail block of the blockChain that consists of blockToCheck
-		endBlock := Block{}
-
-		// Goes through each end blocks to find the one that consists blockToCheck
-		for k := len(blockList) - 1; k > 0; k-- {
-
-			if blockList[k].IsEndBlock == true {
-
-				blockChain := FindBlockChainPath(blockList[k])
-				for l := 0; l < len(blockChain); l++ {
-
-					if blockChain[l].Hash == blockToCheck.Hash {
-						endBlock = blockList[k]
+					if opList[j].UniqueID == uniqueID {
+						foundBlock = true
+						blockToCheck = blockList[i]
+						opToCheck = opList[j]
 						break
 					}
 				}
 			}
 		}
 
-		if endBlock.Hash != "" {
-			// Stop the infinite for loop when we find something to send back to the Art Node
-			if endBlock.PathLength-blockToCheck.PathLength >= opToCheck.ValidateNum {
-				return blockToCheck, true
+		if foundBlock {
+			// Goes through each end blocks to find the one that consists blockToCheck
+			for k := len(blockList) - 1; k > 0; k-- {
+
+				if blockList[k].IsEndBlock == true {
+
+					blockChain := FindBlockChainPath(blockList[k])
+					for l := 0; l < len(blockChain); l++ {
+
+						if blockChain[l].Hash == blockToCheck.Hash {
+							if blockList[k].PathLength-blockChain[l].PathLength >= opToCheck.ValidateNum {
+								return blockToCheck, true
+							}
+							break
+						}
+					}
+				}
 			}
 		}
 
 		time.Sleep(5 * time.Second)
-		timeOut = timeOut + 1
+		//timeOut = timeOut + 1
 	}
 }
 
@@ -1073,8 +1073,10 @@ func main() {
 
 // FOR TESTING
 func printBlockChain() {
-	time.Sleep(2 * time.Minute)
-	fmt.Println(blockList)
+	for {
+		time.Sleep(90 * time.Second)
+		fmt.Println(globalChain)
+	}
 }
 
 func HandleError(err error) {
