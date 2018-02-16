@@ -21,7 +21,7 @@ import (
 )
 
 func main() {
-	minerAddr := "[::]:60325"
+	minerAddr := "[::]:51957"
 	// privKey := // TODO: use crypto/ecdsa to read pub/priv keys from a file argument.
 
 	privateKeyBytesRestored, _ := hex.DecodeString(os.Args[1])
@@ -32,16 +32,18 @@ func main() {
 	if checkError(err) != nil {
 		return
 	}
-	fmt.Println(canvas)
-	fmt.Println(settings)
 
-	// validateNum := 2
+	validateNum := uint8(2)
 
-	// // Add a line.
-	// shapeHash, blockHash, ink, err := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 0 L 0 5", "transparent", "red")
-	// if checkError(err) != nil {
-	// 	return
-	// }
+	// Add a line.
+	shapeHash, blockHash, ink, err := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 0 L 0 5", "transparent", "red")
+	if checkError(err) != nil {
+		return
+	}
+
+	fmt.Println("ShapeHash: ", shapeHash)
+	fmt.Println("BlockHash: ", blockHash)
+	fmt.Println("Ink: ", ink)
 
 	// // Add another line.
 	// shapeHash2, blockHash2, ink2, err := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 0 L 5 0", "transparent", "blue")
@@ -63,10 +65,9 @@ func main() {
 	// 	return
 	// }
 
-	svgs := blockartlib.GetAllSVGs(canvas)
-	err = blockartlib.CreateCanvasHTML(svgs, settings)
+	svgs, _ := blockartlib.GetAllSVGs(canvas)
+	blockartlib.CreateCanvasHTML(svgs, settings)
 	fmt.Println(svgs)
-	fmt.Println(err)
 }
 
 // If error is non-nil, print it out and return it.
