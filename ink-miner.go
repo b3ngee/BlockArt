@@ -435,7 +435,7 @@ func CheckIntersection(operation Operation) error {
 				for _, opLine := range op.Lines {
 					opStart := opLine.Start
 					opEnd := opLine.End
-					if CheckIntersectionLines(start, end, opStart, opEnd) && operation.ArtNodePubKey != op.ArtNodePubKey {
+					if CheckIntersectionLines(start, end, opStart, opEnd) && operation.ArtNodeID != op.ArtNodeID {
 						if op.OpType == "Add" {
 							exists := false
 							for i, delOp := range deletes {

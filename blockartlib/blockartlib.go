@@ -16,11 +16,13 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	mrand "math/rand"
 	"net"
 	"net/rpc"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -49,6 +51,7 @@ type Block struct {
 }
 
 type Operation struct {
+	ArtNodeID     int
 	ShapeType     ShapeType
 	UniqueID      string
 	ArtNodePubKey ecdsa.PublicKey
@@ -85,9 +88,9 @@ type CanvasObj struct {
 }
 
 type ArtNodeKey struct {
+	ArtNodeID int
 	R, S      *big.Int
 	Hash      []byte
-	ArtNodeID int
 }
 
 type Line struct {
@@ -275,6 +278,10 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
 
+	mrand.Seed(time.Now().UnixNano())
+
+	artNodeID := mrand.Intn(10000-1) + 1
+
 	// pubKey := privKey.PublicKey
 
 	cli, err := rpc.Dial("tcp", minerAddr)
@@ -285,7 +292,8 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 
 	r, s, _ := ecdsa.Sign(rand.Reader, &privKey, []byte("This is the private key!"))
 
-	err = cli.Call("ArtKey.ValidateKey", ArtNodeKey{R: r, S: s, Hash: []byte("This is the private key!")}, &setting)
+	err = cli.Call("ArtKey.ValidateKey", ArtNodeKey{ArtNodeID: artNodeID, R: r, S: s, Hash: []byte("This is the private key!")}, &setting)
+
 	if err != nil {
 		return nil, setting, DisconnectedError(minerAddr)
 	}
@@ -295,6 +303,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 		MinerAddress: minerAddr,
 		PrivateKey:   privKey,
 		MinerCli:     cli,
+		ArtNodeID:    artNodeID,
 	}
 
 	canvasSettings = setting
@@ -404,6 +413,7 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	var reply Block
 	err = canvasObj.MinerCli.Call("ArtKey.AddShape", Operation{
+		ArtNodeID:      canvasObj.ArtNodeID,
 		UniqueID:       shapeHash,
 		ArtNodePubKey:  canvasObj.PrivateKey.PublicKey,
 		OpInkCost:      inkReq,
@@ -488,6 +498,7 @@ func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (ink
 	r, s, _ := ecdsa.Sign(rand.Reader, &canvasObj.PrivateKey, []byte("This is the private key!"))
 
 	deleteOperation := Operation{
+		ArtNodeID:      canvasObj.ArtNodeID,
 		UniqueID:       r.String() + s.String(),
 		DeleteUniqueID: shapeHash,
 		ArtNodePubKey:  canvasObj.PrivateKey.PublicKey,
