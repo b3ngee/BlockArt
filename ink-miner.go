@@ -148,16 +148,17 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) 
 // If length of blockchain received = length of own longest blockchain:
 // 		exactly the same blockchain -> do not send it to neighbours anymore
 //		not the same blockchain -> keep the blockchain
-func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain *LongestBlockChain, reply *string) error {
+func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain LongestBlockChain, reply *string) error {
 	mrand.Seed(time.Now().UnixNano())
 
 	ownLongestBlockChain := globalChain
 	var err error
 
-	fmt.Println("BEFORE SYNC: ", operations)
 	// replace own blockList and send to neighbours
 	if len(longestBlockChain.BlockChain) > len(ownLongestBlockChain) {
+
 		blockList = longestBlockChain.BlockChain
+		globalChain = blockList
 
 		for _, miner := range connectedMiners {
 			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain.BlockChain}, &reply)
@@ -184,6 +185,7 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain *LongestBloc
 
 			// if rand = 1, use the longest blockchain received and update the neighbours. Otherwise, keep own longest blockchain.
 			if mrand.Intn(2-1)+1 == 1 {
+				// TODO
 				blockList = longestBlockChain.BlockChain
 				for _, miner := range connectedMiners {
 					err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain.BlockChain}, &reply)
@@ -197,7 +199,6 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain *LongestBloc
 			err = nil
 		}
 	}
-	fmt.Println("AFTER SYNC: ", operations)
 
 	return err
 }
@@ -303,7 +304,7 @@ func GetInkAmount(prevBlock *Block) uint32 {
 
 func GenerateBlock() {
 	// FOR TESTING
-	// go printBlockChain()
+	go printBlockChain()
 	for {
 		var difficulty int
 		var isNoOp bool
@@ -345,6 +346,10 @@ func GenerateBlock() {
 
 		for {
 			if isNoOp && len(operations) > 0 {
+				break
+			}
+
+			if (*prevBlock).Hash != globalChain[len(globalChain)-1].Hash {
 				break
 			}
 
@@ -425,7 +430,7 @@ func CheckIntersection(operation Operation) error {
 		deletes := []Operation{}
 		start := line.Start
 		end := line.End
-		for k := 0; k < len(blockChain); k++ {
+		for k := len(blockChain) - 1; k > 0; k-- {
 			for _, op := range blockChain[k].SetOPs {
 				for _, opLine := range op.Lines {
 					opStart := opLine.Start
@@ -525,6 +530,8 @@ func FindBlockChainPath(block Block) []Block {
 	}
 
 	path = append(path, tempBlock)
+	ReverseArray(path)
+
 	return path
 }
 
@@ -570,6 +577,7 @@ func (minerKey *MinerKey) ReceiveBlock(receivedBlock Block, reply *string) error
 			for _, op := range operations {
 				err := ValidateOperationForLongestChain(op, globalChain)
 				if err != nil {
+					fmt.Println("Error after VOFLC: ", err.Error())
 					return errors.New("Block contains operations that failed to validate")
 				}
 			}
@@ -582,7 +590,7 @@ func (minerKey *MinerKey) ReceiveBlock(receivedBlock Block, reply *string) error
 	receivedBlock.PathLength = previousBlock.PathLength + 1
 	receivedBlock.PreviousBlock = previousBlock
 	receivedBlock.InkBank = previousBlock.TotalInkAmount
-	receivedBlock.TotalInkAmount = receivedBlock.InkBank - ComputeOpCostForMiner(receivedBlock.MinerPubKey, operations) // minus any operations performed by the miner that generated this block
+	receivedBlock.TotalInkAmount = receivedBlock.InkBank + ComputeOpCostForMiner(receivedBlock.MinerPubKey, operations) // add any operations performed by the miner that generated this block
 	previousBlock.IsEndBlock = false
 
 	if len(operations) == 0 {
@@ -592,6 +600,8 @@ func (minerKey *MinerKey) ReceiveBlock(receivedBlock Block, reply *string) error
 	}
 
 	blockList = append(blockList, receivedBlock)
+	globalChain = FindLongestBlockChain()
+
 	SendBlockInfo(receivedBlock)
 
 	return nil
@@ -634,7 +644,10 @@ func ComputeOpCostForMiner(publicKey ecdsa.PublicKey, operations []Operation) ui
 	var cost uint32
 	for _, op := range operations {
 		if reflect.DeepEqual(publicKey, op.ArtNodePubKey) {
-			cost = cost + op.OpInkCost
+			if op.OpType == "Add" {
+				cost = cost - op.OpInkCost
+			}
+			// Fix delete by fixing DeleteShape's OpInkCost
 		}
 	}
 
@@ -650,6 +663,7 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 
 	// CHECK THIS: DON'T THINK IT'S RIGHT
 	if !ecdsa.Verify(&operation.ArtNodePubKey, []byte("This is the private key!"), operation.OPSigR, operation.OPSigS) {
+		fmt.Println("THIS IS STILL BROKEN!")
 		return errors.New("Failed to validate operation signature")
 	}
 
@@ -680,6 +694,7 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 			for k := 0; k < len(longestChain[j].SetOPs); k++ {
 
 				if operation.UniqueID == longestChain[j].SetOPs[k].UniqueID {
+					fmt.Println("Failed on Add")
 					return blockartlib.ShapeOverlapError(operation.UniqueID)
 				}
 			}
@@ -691,6 +706,7 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 			if reflect.DeepEqual(longestChain[l].MinerPubKey, operation.ArtNodePubKey) {
 
 				if longestChain[l].InkBank-operation.OpInkCost < 0 {
+					fmt.Println("Failed on Ink")
 					return blockartlib.InsufficientInkError(longestChain[l].InkBank)
 				}
 			}
@@ -775,11 +791,19 @@ func SyncMinersLongestChain() {
 			var reply string
 
 			for _, miner := range connectedMiners {
-				miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain}, &reply)
+				miner.Cli.Call("MinerKey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain}, &reply)
 			}
 		}
 
-		time.Sleep(30 * time.Second)
+		time.Sleep(10 * time.Second)
+	}
+}
+
+// CALL THIS TO REVERSE AFTER FINDING LONGEST CHAIN USING END NODE
+// [E ... G] -> [G ... E] TO MATCH BLOCKLIST ORDERING
+func ReverseArray(reverseThis []Block) {
+	for i, j := 0, len(reverseThis)-1; i < j; i, j = i+1, j-1 {
+		reverseThis[i], reverseThis[j] = reverseThis[j], reverseThis[i]
 	}
 }
 
@@ -843,8 +867,7 @@ func CheckOperationValidation(uniqueID string) (Block, bool) {
 
 		if endBlock.Hash != "" {
 			// Stop the infinite for loop when we find something to send back to the Art Node
-			// if endBlock.PathLength-blockToCheck.PathLength >= opToCheck.ValidateNum {
-			if endBlock.PathLength-blockToCheck.PathLength >= 0 {
+			if endBlock.PathLength-blockToCheck.PathLength >= opToCheck.ValidateNum {
 				return blockToCheck, true
 			}
 		}
@@ -935,7 +958,7 @@ func (artKey *ArtKey) DeleteShape(shapeHash string, inkRemaining *uint32) error 
 	}
 
 	longestBlockChain := globalChain
-	for i := 0; i < len(longestBlockChain); i++ {
+	for i := len(longestBlockChain) - 1; i >= 0; i-- {
 		block := longestBlockChain[i]
 		if reflect.DeepEqual(block.MinerPubKey, pubKey) {
 			*inkRemaining = block.TotalInkAmount + op.OpInkCost
@@ -970,7 +993,7 @@ func (artkey *ArtKey) ValidateDelete(operation Operation, reply *bool) error {
 	_, valid := CheckOperationValidation(operation.UniqueID)
 	*reply = valid
 
-	for i := 0; i < len(longestBlockChain); i++ {
+	for i := len(longestBlockChain) - 1; i >= 0; i-- {
 		block := longestBlockChain[i]
 		if reflect.DeepEqual(block.MinerPubKey, pubKey) {
 			block.TotalInkAmount = operation.OpInkCost
@@ -1028,10 +1051,10 @@ func main() {
 }
 
 // FOR TESTING
-// func printBlockChain() {
-// 	time.Sleep(2 * time.Minute)
-// 	fmt.Println(blockList)
-// }
+func printBlockChain() {
+	time.Sleep(2 * time.Minute)
+	fmt.Println(blockList)
+}
 
 func HandleError(err error) {
 	if err != nil {
