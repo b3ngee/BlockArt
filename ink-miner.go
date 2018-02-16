@@ -663,7 +663,6 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 
 	// CHECK THIS: DON'T THINK IT'S RIGHT
 	if !ecdsa.Verify(&operation.ArtNodePubKey, []byte("This is the private key!"), operation.OPSigR, operation.OPSigS) {
-		fmt.Println("THIS IS STILL BROKEN!")
 		return errors.New("Failed to validate operation signature")
 	}
 
@@ -701,11 +700,16 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 		}
 
 		// Validates the operation against the Ink Amount Check
-		for l := 0; l < len(longestChain); l++ {
-
+		for l := len(longestChain) - 1; l >= 0; l++ {
+			fmt.Println("checking ink...")
+			fmt.Println("MinerPubKey: ", longestChain[l].MinerPubKey)
+			fmt.Println("ArtNodePubKey: ", operation.ArtNodePubKey)
 			if reflect.DeepEqual(longestChain[l].MinerPubKey, operation.ArtNodePubKey) {
-
-				if longestChain[l].InkBank-operation.OpInkCost < 0 {
+				fmt.Println("found a match, opcost: ", operation.OpInkCost)
+				fmt.Println("Longest chain ink bank: ", longestChain[l].InkBank)
+				difference := int(longestChain[l].InkBank) - int(operation.OpInkCost)
+				fmt.Println("Difference: ", difference)
+				if difference < 0 {
 					fmt.Println("Failed on Ink")
 					return blockartlib.InsufficientInkError(longestChain[l].InkBank)
 				}
