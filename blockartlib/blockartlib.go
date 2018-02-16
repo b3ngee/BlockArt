@@ -367,7 +367,7 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 
 	// For parsing shapeSvgString:  https://piazza.com/class/jbyh5bsk4ez3cn?cid=416
 
-	address := canvasObj.MinerAddress
+	// address := canvasObj.MinerAddress
 
 	// - ShapeSvgStringTooLongError
 	if !HandleSvgStringLength(shapeSvgString) {
@@ -430,7 +430,7 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 	}, &reply)
 	if err != nil {
 		fmt.Println("AddShape RPC: ", err.Error())
-		return "", "", inkRemaining, DisconnectedError(address)
+		return "", "", inkRemaining, err
 	}
 
 	if reply.Hash == "" {
@@ -714,7 +714,6 @@ func CalcInkUsed(lines []Line, fill string) uint32 {
 	}
 
 	inkTotal = round(inkTotal)
-	fmt.Println("this is ink total used in addShape", inkTotal)
 
 	return uint32(inkTotal)
 
