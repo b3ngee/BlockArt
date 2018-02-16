@@ -347,10 +347,16 @@ func GenerateBlock() {
 		newBlock := Block{Nonce: 0, MinerPubKey: pubKey}
 
 		if len(operations) > 0 {
+			if len(operations) > 1 && CheckIntersectionWithinOp(operations) {
+				copyOfOps = make([]Operation, 1)
+				copy(copyOfOps, []Operation{operations[0]})
+				operations = append(operations[:0], operations[1:]...)
+			} else {
+				copyOfOps = make([]Operation, len(operations))
+				copy(copyOfOps, operations)
+				operations = operations[:0]
+			}
 			isNoOp = false
-			copyOfOps = make([]Operation, len(operations))
-			copy(copyOfOps, operations)
-			operations = operations[:0]
 
 			newBlock.SetOPs = copyOfOps
 			difficulty = int(settings.PoWDifficultyOpBlock)
@@ -458,7 +464,7 @@ func CheckIntersectionWithinOp(operations []Operation) bool {
 				for _, line1 := range operations[i].Lines {
 					//each line of op1 is compared against op2's lines
 					for _, line2 := range operations[j].Lines {
-						if CheckIntersectionLines(line1.Start, line1.End, line2.Start, line2.End) {
+						if CheckIntersectionLines(line1.Start, line1.End, line2.Start, line2.End) && operations[i].ArtNodeID != operations[j].ArtNodeID {
 							return true
 						}
 					}
