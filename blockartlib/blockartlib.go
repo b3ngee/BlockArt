@@ -302,7 +302,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 		MinerAddress: minerAddr,
 		PrivateKey:   privKey,
 		MinerCli:     cli,
-		ArtNodeID:    artNodeID}
+		ArtNodeID:    artNodeID,
 	}
 
 	canvasSettings = setting

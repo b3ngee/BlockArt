@@ -116,6 +116,7 @@ var connectedMiners = make(map[string]Miner)
 // var connectedArtNodeMap = make(map[string]ArtNodeInfo)
 
 // Keeps track of all blocks generated
+// GenesisBlock is at the start of the block
 var blockList = []Block{}
 
 // Queue of incoming operations
@@ -124,6 +125,7 @@ var operations = []Operation{}
 // Operations that are seen already (consists of unique shape hash)
 var operationsHistory = make([]string, 0)
 
+// GenesisBlock is at the end of the block
 var globalChain []Block
 
 // FUNCTION CALLS
@@ -138,6 +140,34 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) 
 	*reply = MinerInfo{Address: minerAddr, Key: pubKey}
 
 	return err
+}
+
+// Checks blocklist against longest chain and find unvalidated operations in the shorter chain.
+// Moves the unvalidated operation to the operations queue when it finds them.
+func checkUnvalidatedOperation() {
+	for i := len(blockList); i > 0; i-- {
+
+		if blockList[i].IsEndBlock && (blockList[i].Hash != globalChain[0].Hash) {
+
+			shorterChain := FindBlockChainPath(blockList[i])
+
+			for j := 0; j < len(shorterChain); j++ {
+
+				for k := 0; k < len(shorterChain[j].SetOPs); k++ {
+
+					// Compares the end block path length and the path length of the block that has the current operation
+					if (shorterChain[0].PathLength - shorterChain[j].PathLength) < shorterChain[j].SetOPs[k].ValidateNum {
+
+						// If it is validated, append to operations queue. Otherwise, drop it and let timeout handle the case.
+						err := ValidateOperationForLongestChain(shorterChain[j].SetOPs[k], globalChain)
+						if err == nil {
+							operations = append(operations, shorterChain[j].SetOPs[k])
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 // Updates the longest block chain in the Miner Network.
@@ -164,6 +194,9 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain LongestBlock
 			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain.BlockChain}, &reply)
 		}
 	} else if len(longestBlockChain.BlockChain) < len(ownLongestBlockChain) {
+
+		// Calls Helper function to take care of edge case where there are unvalidated OP blocks in shorter chain
+		// checkUnValidatedOperation()
 
 		// send own longest blockchain to neighbours
 		for _, miner := range connectedMiners {
@@ -805,18 +838,6 @@ func ReverseArray(reverseThis []Block) {
 	for i, j := 0, len(reverseThis)-1; i < j; i, j = i+1, j-1 {
 		reverseThis[i], reverseThis[j] = reverseThis[j], reverseThis[i]
 	}
-}
-
-// Gets the Max Validate Number for a block using set of operations inside it.
-// UNUSED
-func GetMaxValidateNum(operations []Operation) int {
-	maxValidateNum := 0
-	for i := 0; i < len(operations); i++ {
-		if operations[i].ValidateNum > maxValidateNum {
-			maxValidateNum = operations[i].ValidateNum
-		}
-	}
-	return maxValidateNum
 }
 
 // Checks whether or not operations are validated or not and returns block where op is in (check validateNum against the block)
