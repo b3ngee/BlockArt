@@ -22,7 +22,7 @@ import (
 )
 
 func main() {
-	minerAddr := "[::]:63206"
+	minerAddr := "[::]:65214"
 	// privKey := // TODO: use crypto/ecdsa to read pub/priv keys from a file argument.
 
 	privateKeyBytesRestored, _ := hex.DecodeString(os.Args[1])
@@ -35,6 +35,8 @@ func main() {
 	}
 
 	validateNum := uint8(2)
+
+	time.Sleep(30 * time.Second)
 
 	// Add a line.
 	shapeHash, blockHash, ink, err := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 0 L 1000 0 L 0 1000 Z", "blue", "red")
