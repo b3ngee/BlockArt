@@ -428,9 +428,15 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 		Lines:          linesToDraw,
 		PathShape:      pathShape,
 	}, &reply)
+
 	if err != nil {
-		fmt.Println("AddShape RPC: ", err.Error())
-		return "", "", inkRemaining, err
+
+		if err.Error() == "connection is shut down" {
+			return "", "", inkRemaining, DisconnectedError(canvasObj.MinerAddress)
+		} else {
+			fmt.Println("AddShape RPC: ", err.Error())
+			return "", "", inkRemaining, err
+		}
 	}
 
 	if reply.Hash == "" {
@@ -500,7 +506,11 @@ func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (ink
 	var replyOp Operation
 	err = canvasObj.MinerCli.Call("ArtKey.GetOperationWithShapeHash", shapeHash, &replyOp)
 	if err != nil {
-		return 0, DisconnectedError(address)
+		if err.Error() == "connection is shut down" {
+			return 0, DisconnectedError(address)
+		} else {
+			return 0, ShapeOwnerError(shapeHash)
+		}
 	}
 
 	shapeType := replyOp.ShapeType
@@ -525,8 +535,14 @@ func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (ink
 
 	var reply bool
 	client.Call("ArtKey.ValidateDelete", deleteOperation, &reply)
+
 	if err != nil {
-		return 0, DisconnectedError(address)
+
+		if err.Error() == "connection is shut down" {
+			return 0, DisconnectedError(address)
+		} else {
+			return 0, err
+		}
 	}
 
 	if reply {
