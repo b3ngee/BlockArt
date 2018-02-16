@@ -151,12 +151,12 @@ func checkUnvalidatedOperation() {
 
 			shorterChain := FindBlockChainPath(blockList[i])
 
-			for j := 0; j < len(shorterChain); j++ {
+			for j := len(shorterChain); j > 1; j-- {
 
 				for k := 0; k < len(shorterChain[j].SetOPs); k++ {
 
 					// Compares the end block path length and the path length of the block that has the current operation
-					if (shorterChain[0].PathLength - shorterChain[j].PathLength) < shorterChain[j].SetOPs[k].ValidateNum {
+					if (shorterChain[len(shorterChain)-1].PathLength - shorterChain[j].PathLength) < shorterChain[j].SetOPs[k].ValidateNum {
 
 						// If it is validated, append to operations queue. Otherwise, drop it and let timeout handle the case.
 						err := ValidateOperationForLongestChain(shorterChain[j].SetOPs[k], globalChain)
