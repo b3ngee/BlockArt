@@ -700,7 +700,7 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 		}
 
 		// Validates the operation against the Ink Amount Check
-		for l := len(longestChain) - 1; l >= 0; l++ {
+		for l := len(longestChain) - 1; l >= 0; l-- {
 			fmt.Println("checking ink...")
 			fmt.Println("MinerPubKey: ", longestChain[l].MinerPubKey)
 			fmt.Println("ArtNodePubKey: ", operation.ArtNodePubKey)
@@ -713,6 +713,7 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 					fmt.Println("Failed on Ink")
 					return blockartlib.InsufficientInkError(longestChain[l].InkBank)
 				}
+				break
 			}
 		}
 	}

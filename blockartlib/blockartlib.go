@@ -497,6 +497,16 @@ func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (ink
 
 	r, s, _ := ecdsa.Sign(rand.Reader, &canvasObj.PrivateKey, []byte("This is the private key!"))
 
+	var replyOp Operation
+	err = canvasObj.MinerCli.Call("ArtKey.GetOperationWithShapeHash", shapeHash, &replyOp)
+	if err != nil {
+		return 0, DisconnectedError(address)
+	}
+
+	shapeType := replyOp.ShapeType
+	dString := replyOp.ShapeSvgString
+	cost := replyOp.OpInkCost
+
 	deleteOperation := Operation{
 		ArtNodeID:      canvasObj.ArtNodeID,
 		UniqueID:       r.String() + s.String(),
@@ -506,7 +516,11 @@ func (canvasObj CanvasObj) DeleteShape(validateNum uint8, shapeHash string) (ink
 		OPSigR:         r,
 		OPSigS:         s,
 		OpType:         "Delete",
-		OpInkCost:      inkRemaining,
+		Fill:           "white",
+		Stroke:         "white",
+		ShapeType:      shapeType,
+		ShapeSvgString: dString,
+		OpInkCost:      cost,
 	}
 
 	var reply bool
