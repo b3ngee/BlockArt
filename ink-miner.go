@@ -236,7 +236,7 @@ func (minerKey *MinerKey) ReceiveOperation(operation Operation, reply *bool) err
 	return nil
 }
 
-func (artkey *ArtKey) ValidateKey(artNodeKey *blockartlib.ArtNodeKey, canvasSettings *blockartlib.CanvasSettings) error {
+func (artkey *ArtKey) ValidateKey(artNodeKey blockartlib.ArtNodeKey, canvasSettings *blockartlib.CanvasSettings) error {
 
 	if ecdsa.Verify(&pubKey, artNodeKey.Hash, artNodeKey.R, artNodeKey.S) == true {
 		*canvasSettings = settings.CanvasSettings

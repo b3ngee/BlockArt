@@ -22,7 +22,7 @@ import (
 )
 
 func main() {
-	minerAddr := "[::]:61867"
+	minerAddr := "[::]:63206"
 	// privKey := // TODO: use crypto/ecdsa to read pub/priv keys from a file argument.
 
 	privateKeyBytesRestored, _ := hex.DecodeString(os.Args[1])
@@ -37,7 +37,7 @@ func main() {
 	validateNum := uint8(2)
 
 	// Add a line.
-	shapeHash, blockHash, ink, err := canvas.AddShape(validateNum, blockartlib.PATH, "M 450 0 L 175 600 L 425 400 Z", "transparent", "red")
+	shapeHash, blockHash, ink, err := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 0 L 1000 0 L 0 1000 Z", "blue", "red")
 	if checkError(err) != nil {
 		return
 	}
@@ -45,6 +45,17 @@ func main() {
 	fmt.Println("ShapeHash: ", shapeHash)
 	fmt.Println("BlockHash: ", blockHash)
 	fmt.Println("Ink: ", ink)
+
+	// time.Sleep(30 * time.Second)
+
+	// shapeHash1, blockHash1, ink1, err := canvas.AddShape(validateNum, blockartlib.PATH, "M 300 300 L 500 300 L 500 500 z", "blue", "red")
+	// if checkError(err) != nil {
+	// 	return
+	// }
+
+	// fmt.Println("ShapeHash: ", shapeHash1)
+	// fmt.Println("BlockHash: ", blockHash1)
+	// fmt.Println("Ink: ", ink1)
 
 	// // Add another line.
 	// shapeHash2, blockHash2, ink2, err := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 0 L 5 0", "transparent", "blue")
