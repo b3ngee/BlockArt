@@ -430,13 +430,10 @@ func (canvasObj CanvasObj) AddShape(validateNum uint8, shapeType ShapeType, shap
 	}, &reply)
 
 	if err != nil {
-
 		if err.Error() == "connection is shut down" {
 			return "", "", inkRemaining, DisconnectedError(canvasObj.MinerAddress)
-		} else {
-			fmt.Println("AddShape RPC: ", err.Error())
-			return "", "", inkRemaining, err
 		}
+		return "", "", inkRemaining, err
 	}
 
 	if reply.Hash == "" {

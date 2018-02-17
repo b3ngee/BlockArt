@@ -368,7 +368,7 @@ func GetInkAmount(prevBlock *Block) uint32 {
 
 func GenerateBlock() {
 	// FOR TESTING
-	go printBlockChain()
+	// go printBlockChain()
 	for {
 		var difficulty int
 		var isNoOp bool
@@ -668,7 +668,6 @@ func (minerKey *MinerKey) ReceiveBlock(receivedBlock Block, reply *string) error
 			for _, op := range operations {
 				err := ValidateOperationForLongestChain(op, globalChain)
 				if err != nil {
-					fmt.Println("Error after VOFLC: ", err.Error())
 					return errors.New("Block contains operations that failed to validate")
 				}
 			}
@@ -784,7 +783,6 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 			for k := 0; k < len(longestChain[j].SetOPs); k++ {
 
 				if operation.UniqueID == longestChain[j].SetOPs[k].UniqueID {
-					fmt.Println("Failed on Add")
 					return blockartlib.ShapeOverlapError(operation.UniqueID)
 				}
 			}
@@ -793,11 +791,8 @@ func ValidateOperationForLongestChain(operation Operation, longestChain []Block)
 		// Validates the operation against the Ink Amount Check
 		for l := len(longestChain) - 1; l >= 0; l-- {
 			if reflect.DeepEqual(longestChain[l].MinerPubKey, operation.ArtNodePubKey) {
-				fmt.Println("found a match, opcost: ", operation.OpInkCost)
-				fmt.Println("Longest chain ink bank: ", longestChain[l].InkBank)
 				difference := int(longestChain[l].InkBank) - int(operation.OpInkCost)
 				if difference < 0 {
-					fmt.Println("Failed on Ink")
 					return blockartlib.InsufficientInkError(longestChain[l].InkBank)
 				}
 				break
@@ -898,7 +893,7 @@ func SyncMinersLongestChain() {
 
 		connectedMiners.Unlock()
 
-		time.Sleep(10 * time.Second)
+		time.Sleep(5 * time.Second)
 	}
 }
 
@@ -920,8 +915,8 @@ func CheckOperationValidation(uniqueID string) (Block, bool) {
 	foundBlock := false
 
 	for {
-		// Times out, sends reply back (1 mins currently)
-		if timeOut == 30 {
+		// Times out, sends reply back (2 mins currently)
+		if timeOut == 60 {
 			return Block{}, false
 		}
 
@@ -1043,7 +1038,9 @@ func (artKey *ArtKey) DeleteShape(shapeHash string, inkRemaining *uint32) error 
 	if op.UniqueID == "" {
 		return errors.New("Does not exist")
 	}
-	if pubKey != op.ArtNodePubKey {
+	fmt.Println("Pubkey: ", pubKey)
+	fmt.Println("Op Pubkey: ", op.ArtNodePubKey)
+	if !reflect.DeepEqual(pubKey, op.ArtNodePubKey) {
 		return errors.New("Did not create")
 	}
 
@@ -1146,12 +1143,12 @@ func main() {
 }
 
 // FOR TESTING
-func printBlockChain() {
-	for {
-		time.Sleep(90 * time.Second)
-		fmt.Println(globalChain)
-	}
-}
+// func printBlockChain() {
+// 	for {
+// 		time.Sleep(90 * time.Second)
+// 		fmt.Println(globalChain)
+// 	}
+// }
 
 func HandleError(err error) {
 	if err != nil {
