@@ -368,9 +368,8 @@ func GetInkAmount(prevBlock *Block) uint32 {
 
 func GenerateBlock() {
 	// FOR TESTING
-	// go printBlockChain()
+	//go printBlockChain()
 	for {
-		fmt.Println(len(blockList))
 		var difficulty int
 		var isNoOp bool
 		var prevBlock *Block
@@ -852,9 +851,7 @@ func GetNodes(cli *rpc.Client, minNumberConnections int) {
 			ConnectToMiners(addrSet, minerAddr, pubKey)
 		}
 
-		// connectedMiners.Unlock()
-
-		time.Sleep(7000 * time.Millisecond)
+		time.Sleep(5 * time.Second)
 	}
 }
 
@@ -1039,8 +1036,6 @@ func (artKey *ArtKey) DeleteShape(shapeHash string, inkRemaining *uint32) error 
 	if op.UniqueID == "" {
 		return errors.New("Does not exist")
 	}
-	fmt.Println("Pubkey: ", pubKey)
-	fmt.Println("Op Pubkey: ", op.ArtNodePubKey)
 	if !reflect.DeepEqual(pubKey, op.ArtNodePubKey) {
 		return errors.New("Did not create")
 	}
@@ -1144,12 +1139,12 @@ func main() {
 }
 
 // FOR TESTING
-// func printBlockChain() {
-// 	for {
-// 		time.Sleep(90 * time.Second)
-// 		fmt.Println(globalChain)
-// 	}
-// }
+func printBlockChain() {
+	for {
+		time.Sleep(3 * time.Second)
+		fmt.Println(globalChain)
+	}
+}
 
 func HandleError(err error) {
 	if err != nil {
