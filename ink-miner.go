@@ -12,6 +12,7 @@ package main
 
 import (
 	"reflect"
+	"sync"
 
 	"./blockartlib"
 
@@ -103,6 +104,11 @@ type LongestBlockChain struct {
 	BlockChain []Block
 }
 
+type ConnectedMiners struct {
+	sync.RWMutex
+	Miners map[string]Miner
+}
+
 // Keeps track of all the keys & Miner Address so miner can send it to other miners.
 var privKey ecdsa.PrivateKey
 var pubKey ecdsa.PublicKey
@@ -110,7 +116,7 @@ var pubKey ecdsa.PublicKey
 var minerAddr net.Addr
 
 // Keeps track of all miners that are connected to this miner. (array/slice or map???)
-var connectedMiners = make(map[string]Miner)
+var connectedMiners ConnectedMiners = ConnectedMiners{Miners: make(map[string]Miner)}
 
 // Keeps track of all art nodes that are connected to this miner.
 // var connectedArtNodeMap = make(map[string]ArtNodeInfo)
@@ -132,12 +138,16 @@ var globalChain []Block
 
 // Registers incoming Miner that wants to connect.
 func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) error {
+	connectedMiners.Lock()
+
 	cli, err := rpc.Dial("tcp", minerInfo.Address.String())
 
 	miner := Miner{Address: minerInfo.Address, Key: minerInfo.Key, Cli: cli}
-	connectedMiners[miner.Address.String()] = miner
+	connectedMiners.Miners[miner.Address.String()] = miner
 
 	*reply = MinerInfo{Address: minerAddr, Key: pubKey}
+
+	connectedMiners.Unlock()
 
 	return err
 }
@@ -190,18 +200,26 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain LongestBlock
 		blockList = longestBlockChain.BlockChain
 		globalChain = blockList
 
-		for _, miner := range connectedMiners {
+		connectedMiners.Lock()
+
+		for _, miner := range connectedMiners.Miners {
 			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain.BlockChain}, &reply)
 		}
+
+		connectedMiners.Unlock()
 	} else if len(longestBlockChain.BlockChain) < len(ownLongestBlockChain) {
 
 		// Calls Helper function to take care of edge case where there are unvalidated OP blocks in shorter chain
 		// checkUnValidatedOperation()
 
+		connectedMiners.Lock()
+
 		// send own longest blockchain to neighbours
-		for _, miner := range connectedMiners {
+		for _, miner := range connectedMiners.Miners {
 			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: ownLongestBlockChain}, &reply)
 		}
+
+		connectedMiners.Unlock()
 	} else {
 
 		// equal length, check whether blockchain are duplicates
@@ -214,23 +232,28 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain LongestBlock
 			}
 		}
 		// not the same blockchain
+
+		connectedMiners.Lock()
+
 		if isDuplicate != true {
 
 			// if rand = 1, use the longest blockchain received and update the neighbours. Otherwise, keep own longest blockchain.
 			if mrand.Intn(2-1)+1 == 1 {
 				// TODO
 				blockList = longestBlockChain.BlockChain
-				for _, miner := range connectedMiners {
+				for _, miner := range connectedMiners.Miners {
 					err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain.BlockChain}, &reply)
 				}
 			} else {
-				for _, miner := range connectedMiners {
+				for _, miner := range connectedMiners.Miners {
 					err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: ownLongestBlockChain}, &reply)
 				}
 			}
 		} else {
 			err = nil
 		}
+
+		connectedMiners.Unlock()
 	}
 
 	return err
@@ -257,13 +280,17 @@ func (minerKey *MinerKey) ReceiveOperation(operation Operation, reply *bool) err
 		operationsHistory = append(operationsHistory, operation.UniqueID)
 		operations = append(operations, operation)
 
-		for key, miner := range connectedMiners {
+		connectedMiners.Lock()
+
+		for key, miner := range connectedMiners.Miners {
 			err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
 
 			if err != nil {
-				delete(connectedMiners, key)
+				delete(connectedMiners.Miners, key)
 			}
 		}
+
+		connectedMiners.Unlock()
 	}
 
 	return nil
@@ -291,15 +318,19 @@ func (artkey *ArtKey) AddShape(operation Operation, reply *Block) error {
 	operationsHistory = append(operationsHistory, operation.UniqueID)
 	operations = append(operations, operation)
 
+	connectedMiners.Lock()
+
 	// Floods the network of miners with Operations
-	for key, miner := range connectedMiners {
+	for key, miner := range connectedMiners.Miners {
 
 		err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
 
 		if err != nil {
-			delete(connectedMiners, key)
+			delete(connectedMiners.Miners, key)
 		}
 	}
+
+	connectedMiners.Unlock()
 
 	// put reply as return type of below
 	block, valid := CheckOperationValidation(operation.UniqueID)
@@ -592,13 +623,19 @@ func FindBlockChainPath(block Block) []Block {
 // send out the block information to peers in the connected network of miners
 func SendBlockInfo(block Block) error {
 	replyStr := ""
-	for key, miner := range connectedMiners {
+
+	connectedMiners.Lock()
+
+	for key, miner := range connectedMiners.Miners {
 		err := miner.Cli.Call("MinerKey.ReceiveBlock", block, &replyStr)
 		if err != nil {
 			fmt.Println("Connection error in SendBlockInfo: ", err.Error())
-			delete(connectedMiners, key)
+			delete(connectedMiners.Miners, key)
 		}
 	}
+
+	connectedMiners.Unlock()
+
 	return nil
 }
 
@@ -787,17 +824,18 @@ func InitHeartbeat(cli *rpc.Client, pubKey ecdsa.PublicKey, heartBeat uint32) {
 // Connect to the miners that the server has given.
 // Checks if the address already exists in ConnectedMiners map, it will skip connecting to them again.
 func ConnectToMiners(addrSet []net.Addr, currentAddress net.Addr, currentPubKey ecdsa.PublicKey) {
+
 	for i := 0; i < len(addrSet); i++ {
 		addr := addrSet[i].String()
 
-		if _, ok := connectedMiners[addr]; !ok {
+		if _, ok := connectedMiners.Miners[addr]; !ok {
 			cli, err := rpc.Dial("tcp", addr)
 
 			var reply MinerInfo
 			err = cli.Call("MinerKey.RegisterMiner", MinerInfo{Address: currentAddress, Key: currentPubKey}, &reply)
 			HandleError(err)
 
-			connectedMiners[reply.Address.String()] = Miner{Address: reply.Address, Key: reply.Key, Cli: cli}
+			connectedMiners.Miners[reply.Address.String()] = Miner{Address: reply.Address, Key: reply.Key, Cli: cli}
 		}
 	}
 }
@@ -805,7 +843,10 @@ func ConnectToMiners(addrSet []net.Addr, currentAddress net.Addr, currentPubKey 
 // Goroutine to get nodes (if number of connected miners go below min-num-miner-connections, get more from server)
 func GetNodes(cli *rpc.Client, minNumberConnections int) {
 	for {
-		if len(connectedMiners) < minNumberConnections {
+
+		connectedMiners.Lock()
+
+		if len(connectedMiners.Miners) < minNumberConnections {
 
 			var addrSet []net.Addr
 
@@ -814,6 +855,8 @@ func GetNodes(cli *rpc.Client, minNumberConnections int) {
 
 			ConnectToMiners(addrSet, minerAddr, pubKey)
 		}
+
+		connectedMiners.Unlock()
 
 		time.Sleep(7000 * time.Millisecond)
 	}
@@ -839,16 +882,21 @@ func ComputeBlockHash(block Block) string {
 // Updates everyone's blockchain to only include the LONGEST blockchain
 func SyncMinersLongestChain() {
 	for {
-		if len(connectedMiners) > 0 {
+
+		connectedMiners.Lock()
+
+		if len(connectedMiners.Miners) > 0 {
 
 			longestBlockChain := globalChain
 			blockList = longestBlockChain
 			var reply string
 
-			for _, miner := range connectedMiners {
+			for _, miner := range connectedMiners.Miners {
 				miner.Cli.Call("MinerKey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain}, &reply)
 			}
 		}
+
+		connectedMiners.Unlock()
 
 		time.Sleep(10 * time.Second)
 	}
@@ -1023,14 +1071,19 @@ func (artkey *ArtKey) ValidateDelete(operation Operation, reply *bool) error {
 	operations = append(operations, operation)
 
 	// Floods the network of miners with Operations
-	for key, miner := range connectedMiners {
+
+	connectedMiners.Lock()
+
+	for key, miner := range connectedMiners.Miners {
 
 		err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
 
 		if err != nil {
-			delete(connectedMiners, key)
+			delete(connectedMiners.Miners, key)
 		}
 	}
+
+	connectedMiners.Unlock()
 
 	_, valid := CheckOperationValidation(operation.UniqueID)
 	*reply = valid
