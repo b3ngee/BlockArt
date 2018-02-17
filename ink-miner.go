@@ -140,8 +140,6 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo MinerInfo, reply *MinerInfo) e
 
 	miner := Miner{Address: minerInfo.Address, Key: minerInfo.Key, Cli: cli}
 	connectedMiners[miner.Address.String()] = miner
-	fmt.Println("this is the connectedMiners")
-	fmt.Println(connectedMiners)
 
 	*reply = MinerInfo{Address: tcpAddr, Key: pubKey}
 
@@ -370,9 +368,8 @@ func GetInkAmount(prevBlock *Block) uint32 {
 
 func GenerateBlock() {
 	// FOR TESTING
+	// go printBlockChain()
 	for {
-		// fmt.Println(len(blockList))
-		// fmt.Println(connectedMiners)
 		var difficulty int
 		var isNoOp bool
 		var prevBlock *Block
@@ -634,14 +631,11 @@ func SendBlockInfo(block Block) error {
 	replyStr := ""
 
 	// connectedMiners.Lock()
-	fmt.Println("this is the connectedMiners in blockinfo")
-	fmt.Println(connectedMiners)
 
 	for key, miner := range connectedMiners {
 		err := miner.Cli.Call("MinerKey.ReceiveBlock", block, &replyStr)
 		if err != nil {
 			if err.Error() == "connection is shut down" {
-				fmt.Println("Connection error in SendBlockInfo: ", err.Error())
 				delete(connectedMiners, key)
 			}
 		}
@@ -868,7 +862,7 @@ func GetNodes(cli *rpc.Client, minNumberConnections int) {
 			ConnectToMiners(addrSet, tcpAddr, pubKey)
 		}
 
-		time.Sleep(3 * time.Second)
+		time.Sleep(1 * time.Second)
 	}
 }
 
@@ -930,8 +924,8 @@ func CheckOperationValidation(uniqueID string) (Block, bool) {
 	foundBlock := false
 
 	for {
-		// Times out, sends reply back (2 mins currently)
-		if timeOut == 60 {
+		// Times out, sends reply back (1 min)
+		if timeOut == 200 {
 			return Block{}, false
 		}
 
@@ -963,6 +957,7 @@ func CheckOperationValidation(uniqueID string) (Block, bool) {
 
 						if blockChain[l].Hash == blockToCheck.Hash {
 							if blockList[k].PathLength-blockChain[l].PathLength >= opToCheck.ValidateNum {
+								fmt.Printf("Operation is validated: %s - %s \n", opToCheck.OpType, opToCheck.ShapeSvgString)
 								return blockToCheck, true
 							}
 							break
@@ -972,7 +967,7 @@ func CheckOperationValidation(uniqueID string) (Block, bool) {
 			}
 		}
 
-		time.Sleep(3 * time.Second)
+		time.Sleep(300 * time.Millisecond)
 		timeOut = timeOut + 1
 	}
 }
@@ -1162,7 +1157,7 @@ func main() {
 // FOR TESTING
 func printBlockChain() {
 	for {
-		time.Sleep(3 * time.Second)
+		time.Sleep(10 * time.Second)
 		fmt.Println(globalChain)
 	}
 }

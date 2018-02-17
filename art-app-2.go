@@ -1,17 +1,3 @@
-/*
-
-Public Key is:
-3076301006072a8648ce3d020106052b8104002203620004ce35a39a7ea5c245d8464e7e84a161e77607e58b3a9e293b115b1fed706432e564be15b080f207358f8adca676f751be5fb21c1a4014af3a1b173c3357757ccc3d7402e36bd14107d4b33adf9d7277e7fd3cfd2030a001a909de97a7c91433b8
-
-Private Key is:
-3081a402010104307f18c67fdbec3bdb91e6ce08a951871a1941af1b82c6258ab8090193e6949aa3b39a730530c88bf2e2fec9c2339ef32ea00706052b81040022a16403620004ce35a39a7ea5c245d8464e7e84a161e77607e58b3a9e293b115b1fed706432e564be15b080f207358f8adca676f751be5fb21c1a4014af3a1b173c3357757ccc3d7402e36bd14107d4b33adf9d7277e7fd3cfd2030a001a909de97a7c91433b8
-
-go run ink-miner.go 127.0.0.1:12345 3076301006072a8648ce3d020106052b8104002203620004ce35a39a7ea5c245d8464e7e84a161e77607e58b3a9e293b115b1fed706432e564be15b080f207358f8adca676f751be5fb21c1a4014af3a1b173c3357757ccc3d7402e36bd14107d4b33adf9d7277e7fd3cfd2030a001a909de97a7c91433b8 3081a402010104307f18c67fdbec3bdb91e6ce08a951871a1941af1b82c6258ab8090193e6949aa3b39a730530c88bf2e2fec9c2339ef32ea00706052b81040022a16403620004ce35a39a7ea5c245d8464e7e84a161e77607e58b3a9e293b115b1fed706432e564be15b080f207358f8adca676f751be5fb21c1a4014af3a1b173c3357757ccc3d7402e36bd14107d4b33adf9d7277e7fd3cfd2030a001a909de97a7c91433b8 127.0.0.1
-
-go run art-app-2.go 3081a402010104307f18c67fdbec3bdb91e6ce08a951871a1941af1b82c6258ab8090193e6949aa3b39a730530c88bf2e2fec9c2339ef32ea00706052b81040022a16403620004ce35a39a7ea5c245d8464e7e84a161e77607e58b3a9e293b115b1fed706432e564be15b080f207358f8adca676f751be5fb21c1a4014af3a1b173c3357757ccc3d7402e36bd14107d4b33adf9d7277e7fd3cfd2030a001a909de97a7c91433b8
-
-*/
-
 package main
 
 import (
@@ -25,13 +11,11 @@ import (
 )
 
 func main() {
-	minerAddr := "[::]:60637"
-	validateNum := uint8(2)
+	minerAddr := os.Args[2]
+	validateNum := uint8(3)
 
 	privateKeyBytesRestored, _ := hex.DecodeString(os.Args[1])
 	privKey, _ := x509.ParseECPrivateKey(privateKeyBytesRestored)
-
-	time.Sleep(10 * time.Millisecond)
 
 	// Open a canvas.
 	canvas, settings, err := blockartlib.OpenCanvas(minerAddr, *privKey)
@@ -51,15 +35,17 @@ func main() {
 	_, _, _, err2 := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 150 L 1023 150 L 1023 1023 L 0 1023 Z", "purple", "blue")
 	checkError(err2)
 
-	time.Sleep(3 * time.Minute)
+	time.Sleep(120 * time.Second)
 
 	svgs, _ := blockartlib.GetAllSVGs(canvas)
 	blockartlib.CreateCanvasHTML(svgs, "2", settings)
-	fmt.Println("HERE ARE THE SVG: ", svgs)
+	fmt.Println("Svg Strings: ", svgs)
 
 	// Close the canvas.
 	_, err3 := canvas.CloseCanvas()
 	checkError(err3)
+
+	fmt.Println("Successful art-app-2")
 }
 
 // If error is non-nil, print it out and return it.

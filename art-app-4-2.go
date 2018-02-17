@@ -25,8 +25,8 @@ import (
 )
 
 func main() {
-	minerAddr := "[::]:62140"
-	validateNum := uint8(2)
+	minerAddr := os.Args[2]
+	validateNum := uint8(3)
 
 	privateKeyBytesRestored, _ := hex.DecodeString(os.Args[1])
 	privKey, _ := x509.ParseECPrivateKey(privateKeyBytesRestored)
@@ -37,17 +37,29 @@ func main() {
 		return
 	}
 
-	time.Sleep(500 * time.Millisecond)
-
-	// Add a orange square.
-	_, _, _, err1 := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 120 L 20 120 L 20 140 L 0 140 Z", "transparent", "black")
+	// Overlaps a black square with orange square from art-app-4-1
+	_, _, _, err1 := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 90 L 20 90 L 20 110 L 0 110 Z", "transparent", "black")
 	checkError(err1)
 
-	time.Sleep(30 * time.Seconds)
+	// Adds black square with yellow fill
+	sh, _, _, err2 := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 120 L 20 120 L 20 140 L 0 140 Z", "yellow", "black")
+	checkError(err2)
+
+	// Delete previous shape
+	_, derr := canvas.DeleteShape(validateNum, sh)
+	checkError(derr)
+
+	time.Sleep(120 * time.Second)
+
+	svgs, _ := blockartlib.GetAllSVGs(canvas)
+	blockartlib.CreateCanvasHTML(svgs, "4-2", settings)
+	fmt.Println("Svg strings: ", svgs)
 
 	// Close the canvas.
-	_, err2 := canvas.CloseCanvas()
-	checkError(err2)
+	_, err3 := canvas.CloseCanvas()
+	checkError(err3)
+
+	fmt.Println("Successful art-app-4-2")
 }
 
 // If error is non-nil, print it out and return it.
