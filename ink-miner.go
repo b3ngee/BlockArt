@@ -110,6 +110,8 @@ var pubKey ecdsa.PublicKey
 
 var minerAddr net.Addr
 
+var tcpAddr net.Addr
+
 // Keeps track of all miners that are connected to this miner. (array/slice or map???)
 var connectedMiners = make(map[string]Miner)
 
@@ -132,17 +134,16 @@ var globalChain []Block
 // FUNCTION CALLS
 
 // Registers incoming Miner that wants to connect.
-func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) error {
-
-	fmt.Println("hello")
+func (minerKey *MinerKey) RegisterMiner(minerInfo MinerInfo, reply *MinerInfo) error {
 	// connectedMiners.Lock()
-
 	cli, err := rpc.Dial("tcp", minerInfo.Address.String())
 
 	miner := Miner{Address: minerInfo.Address, Key: minerInfo.Key, Cli: cli}
 	connectedMiners[miner.Address.String()] = miner
+	fmt.Println("this is the connectedMiners")
+	fmt.Println(connectedMiners)
 
-	*reply = MinerInfo{Address: minerAddr, Key: pubKey}
+	*reply = MinerInfo{Address: tcpAddr, Key: pubKey}
 
 	// connectedMiners.Unlock()
 
@@ -283,7 +284,9 @@ func (minerKey *MinerKey) ReceiveOperation(operation Operation, reply *bool) err
 			err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
 
 			if err != nil {
-				delete(connectedMiners, key)
+				if err.Error() == "connection is shut down" {
+					delete(connectedMiners, key)
+				}
 			}
 		}
 
@@ -323,7 +326,9 @@ func (artkey *ArtKey) AddShape(operation Operation, reply *Block) error {
 		err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
 
 		if err != nil {
-			delete(connectedMiners, key)
+			if err.Error() == "connection is shut down" {
+				delete(connectedMiners, key)
+			}
 		}
 	}
 
@@ -365,8 +370,9 @@ func GetInkAmount(prevBlock *Block) uint32 {
 
 func GenerateBlock() {
 	// FOR TESTING
-	//go printBlockChain()
 	for {
+		// fmt.Println(len(blockList))
+		// fmt.Println(connectedMiners)
 		var difficulty int
 		var isNoOp bool
 		var prevBlock *Block
@@ -628,12 +634,16 @@ func SendBlockInfo(block Block) error {
 	replyStr := ""
 
 	// connectedMiners.Lock()
+	fmt.Println("this is the connectedMiners in blockinfo")
+	fmt.Println(connectedMiners)
 
 	for key, miner := range connectedMiners {
 		err := miner.Cli.Call("MinerKey.ReceiveBlock", block, &replyStr)
 		if err != nil {
-			fmt.Println("Connection error in SendBlockInfo: ", err.Error())
-			delete(connectedMiners, key)
+			if err.Error() == "connection is shut down" {
+				fmt.Println("Connection error in SendBlockInfo: ", err.Error())
+				delete(connectedMiners, key)
+			}
 		}
 	}
 
@@ -823,15 +833,21 @@ func InitHeartbeat(cli *rpc.Client, pubKey ecdsa.PublicKey, heartBeat uint32) {
 // Checks if the address already exists in ConnectedMiners map, it will skip connecting to them again.
 func ConnectToMiners(addrSet []net.Addr, currentAddress net.Addr, currentPubKey ecdsa.PublicKey) {
 	for i := 0; i < len(addrSet); i++ {
+
 		addr := addrSet[i].String()
-
 		if _, ok := connectedMiners[addr]; !ok {
-			cli, err := rpc.Dial("tcp", addr)
-			var reply MinerInfo
-			err = cli.Call("MinerKey.RegisterMiner", MinerInfo{Address: currentAddress, Key: currentPubKey}, &reply)
-			HandleError(err)
 
-			connectedMiners[reply.Address.String()] = Miner{Address: reply.Address, Key: reply.Key, Cli: cli}
+			cli, err := rpc.Dial("tcp", addr)
+
+			if cli == nil {
+				delete(connectedMiners, addr)
+			} else {
+				var reply MinerInfo
+				err = cli.Call("MinerKey.RegisterMiner", MinerInfo{Address: currentAddress, Key: currentPubKey}, &reply)
+				HandleError(err)
+
+				connectedMiners[reply.Address.String()] = Miner{Address: reply.Address, Key: reply.Key, Cli: cli}
+			}
 		}
 	}
 }
@@ -849,7 +865,7 @@ func GetNodes(cli *rpc.Client, minNumberConnections int) {
 			err := cli.Call("RServer.GetNodes", pubKey, &addrSet)
 			HandleError(err)
 
-			ConnectToMiners(addrSet, minerAddr, pubKey)
+			ConnectToMiners(addrSet, tcpAddr, pubKey)
 		}
 
 		time.Sleep(3 * time.Second)
@@ -1073,7 +1089,9 @@ func (artkey *ArtKey) ValidateDelete(operation Operation, reply *bool) error {
 		err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
 
 		if err != nil {
-			delete(connectedMiners, key)
+			if err.Error() == "connection is shut down" {
+				delete(connectedMiners, key)
+			}
 		}
 	}
 
@@ -1116,7 +1134,7 @@ func main() {
 	artKey := new(ArtKey)
 	rpc.Register(artKey)
 
-	tcpAddr, _ := net.ResolveTCPAddr("tcp", os.Args[5])
+	tcpAddr, _ = net.ResolveTCPAddr("tcp", os.Args[5])
 
 	err = cli.Call("RServer.Register", MinerInfo{Address: tcpAddr, Key: pubKey}, &settings)
 	HandleError(err)
@@ -1132,7 +1150,7 @@ func main() {
 	err = cli.Call("RServer.GetNodes", pubKey, &addrSet)
 	HandleError(err)
 
-	ConnectToMiners(addrSet, minerAddr, pubKey)
+	ConnectToMiners(addrSet, tcpAddr, pubKey)
 
 	go GetNodes(cli, int(settings.MinNumMinerConnections))
 
