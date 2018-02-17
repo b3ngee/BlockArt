@@ -138,7 +138,7 @@ var globalChain []Block
 
 // Registers incoming Miner that wants to connect.
 func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) error {
-	connectedMiners.Lock()
+	// connectedMiners.Lock()
 
 	cli, err := rpc.Dial("tcp", minerInfo.Address.String())
 
@@ -147,7 +147,7 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) 
 
 	*reply = MinerInfo{Address: minerAddr, Key: pubKey}
 
-	connectedMiners.Unlock()
+	// connectedMiners.Unlock()
 
 	return err
 }
@@ -200,26 +200,26 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain LongestBlock
 		blockList = longestBlockChain.BlockChain
 		globalChain = blockList
 
-		connectedMiners.Lock()
+		// connectedMiners.Lock()
 
 		for _, miner := range connectedMiners.Miners {
 			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain.BlockChain}, &reply)
 		}
 
-		connectedMiners.Unlock()
+		// connectedMiners.Unlock()
 	} else if len(longestBlockChain.BlockChain) < len(ownLongestBlockChain) {
 
 		// Calls Helper function to take care of edge case where there are unvalidated OP blocks in shorter chain
 		// checkUnValidatedOperation()
 
-		connectedMiners.Lock()
+		// connectedMiners.Lock()
 
 		// send own longest blockchain to neighbours
 		for _, miner := range connectedMiners.Miners {
 			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: ownLongestBlockChain}, &reply)
 		}
 
-		connectedMiners.Unlock()
+		// connectedMiners.Unlock()
 	} else {
 
 		// equal length, check whether blockchain are duplicates
@@ -233,7 +233,7 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain LongestBlock
 		}
 		// not the same blockchain
 
-		connectedMiners.Lock()
+		// connectedMiners.Lock()
 
 		if isDuplicate != true {
 
@@ -253,7 +253,7 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain LongestBlock
 			err = nil
 		}
 
-		connectedMiners.Unlock()
+		// connectedMiners.Unlock()
 	}
 
 	return err
@@ -280,7 +280,7 @@ func (minerKey *MinerKey) ReceiveOperation(operation Operation, reply *bool) err
 		operationsHistory = append(operationsHistory, operation.UniqueID)
 		operations = append(operations, operation)
 
-		connectedMiners.Lock()
+		// connectedMiners.Lock()
 
 		for key, miner := range connectedMiners.Miners {
 			err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
@@ -290,7 +290,7 @@ func (minerKey *MinerKey) ReceiveOperation(operation Operation, reply *bool) err
 			}
 		}
 
-		connectedMiners.Unlock()
+		// connectedMiners.Unlock()
 	}
 
 	return nil
@@ -318,7 +318,7 @@ func (artkey *ArtKey) AddShape(operation Operation, reply *Block) error {
 	operationsHistory = append(operationsHistory, operation.UniqueID)
 	operations = append(operations, operation)
 
-	connectedMiners.Lock()
+	// connectedMiners.Lock()
 
 	// Floods the network of miners with Operations
 	for key, miner := range connectedMiners.Miners {
@@ -330,7 +330,7 @@ func (artkey *ArtKey) AddShape(operation Operation, reply *Block) error {
 		}
 	}
 
-	connectedMiners.Unlock()
+	// connectedMiners.Unlock()
 
 	// put reply as return type of below
 	block, valid := CheckOperationValidation(operation.UniqueID)
@@ -370,6 +370,7 @@ func GenerateBlock() {
 	// FOR TESTING
 	// go printBlockChain()
 	for {
+		fmt.Println(len(blockList))
 		var difficulty int
 		var isNoOp bool
 		var prevBlock *Block
@@ -624,7 +625,7 @@ func FindBlockChainPath(block Block) []Block {
 func SendBlockInfo(block Block) error {
 	replyStr := ""
 
-	connectedMiners.Lock()
+	// connectedMiners.Lock()
 
 	for key, miner := range connectedMiners.Miners {
 		err := miner.Cli.Call("MinerKey.ReceiveBlock", block, &replyStr)
@@ -634,7 +635,7 @@ func SendBlockInfo(block Block) error {
 		}
 	}
 
-	connectedMiners.Unlock()
+	// connectedMiners.Unlock()
 
 	return nil
 }
@@ -839,7 +840,7 @@ func ConnectToMiners(addrSet []net.Addr, currentAddress net.Addr, currentPubKey 
 func GetNodes(cli *rpc.Client, minNumberConnections int) {
 	for {
 
-		connectedMiners.Lock()
+		// connectedMiners.Lock()
 
 		if len(connectedMiners.Miners) < minNumberConnections {
 
@@ -851,7 +852,7 @@ func GetNodes(cli *rpc.Client, minNumberConnections int) {
 			ConnectToMiners(addrSet, minerAddr, pubKey)
 		}
 
-		connectedMiners.Unlock()
+		// connectedMiners.Unlock()
 
 		time.Sleep(7000 * time.Millisecond)
 	}
@@ -878,7 +879,7 @@ func ComputeBlockHash(block Block) string {
 func SyncMinersLongestChain() {
 	for {
 
-		connectedMiners.Lock()
+		// connectedMiners.Lock()
 
 		if len(connectedMiners.Miners) > 0 {
 
@@ -891,7 +892,7 @@ func SyncMinersLongestChain() {
 			}
 		}
 
-		connectedMiners.Unlock()
+		// connectedMiners.Unlock()
 
 		time.Sleep(5 * time.Second)
 	}
@@ -1069,7 +1070,7 @@ func (artkey *ArtKey) ValidateDelete(operation Operation, reply *bool) error {
 
 	// Floods the network of miners with Operations
 
-	connectedMiners.Lock()
+	// connectedMiners.Lock()
 
 	for key, miner := range connectedMiners.Miners {
 
@@ -1080,7 +1081,7 @@ func (artkey *ArtKey) ValidateDelete(operation Operation, reply *bool) error {
 		}
 	}
 
-	connectedMiners.Unlock()
+	// connectedMiners.Unlock()
 
 	_, valid := CheckOperationValidation(operation.UniqueID)
 	*reply = valid
