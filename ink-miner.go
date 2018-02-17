@@ -12,7 +12,6 @@ package main
 
 import (
 	"reflect"
-	"sync"
 
 	"./blockartlib"
 
@@ -45,8 +44,9 @@ type MinerKey int
 type ArtKey int
 
 type MinerInfo struct {
-	Address net.Addr
-	Key     ecdsa.PublicKey
+	Address  net.Addr
+	Key      ecdsa.PublicKey
+	PublicIP string
 }
 
 type MinerPubKey struct {
@@ -104,11 +104,6 @@ type LongestBlockChain struct {
 	BlockChain []Block
 }
 
-type ConnectedMiners struct {
-	sync.RWMutex
-	Miners map[string]Miner
-}
-
 // Keeps track of all the keys & Miner Address so miner can send it to other miners.
 var privKey ecdsa.PrivateKey
 var pubKey ecdsa.PublicKey
@@ -116,7 +111,7 @@ var pubKey ecdsa.PublicKey
 var minerAddr net.Addr
 
 // Keeps track of all miners that are connected to this miner. (array/slice or map???)
-var connectedMiners ConnectedMiners = ConnectedMiners{Miners: make(map[string]Miner)}
+var connectedMiners = make(map[string]Miner)
 
 // Keeps track of all art nodes that are connected to this miner.
 // var connectedArtNodeMap = make(map[string]ArtNodeInfo)
@@ -138,12 +133,14 @@ var globalChain []Block
 
 // Registers incoming Miner that wants to connect.
 func (minerKey *MinerKey) RegisterMiner(minerInfo *MinerInfo, reply *MinerInfo) error {
+
+	fmt.Println("hello")
 	// connectedMiners.Lock()
 
 	cli, err := rpc.Dial("tcp", minerInfo.Address.String())
 
 	miner := Miner{Address: minerInfo.Address, Key: minerInfo.Key, Cli: cli}
-	connectedMiners.Miners[miner.Address.String()] = miner
+	connectedMiners[miner.Address.String()] = miner
 
 	*reply = MinerInfo{Address: minerAddr, Key: pubKey}
 
@@ -202,7 +199,7 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain LongestBlock
 
 		// connectedMiners.Lock()
 
-		for _, miner := range connectedMiners.Miners {
+		for _, miner := range connectedMiners {
 			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain.BlockChain}, &reply)
 		}
 
@@ -215,7 +212,7 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain LongestBlock
 		// connectedMiners.Lock()
 
 		// send own longest blockchain to neighbours
-		for _, miner := range connectedMiners.Miners {
+		for _, miner := range connectedMiners {
 			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: ownLongestBlockChain}, &reply)
 		}
 
@@ -241,11 +238,11 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain LongestBlock
 			if mrand.Intn(2-1)+1 == 1 {
 				// TODO
 				blockList = longestBlockChain.BlockChain
-				for _, miner := range connectedMiners.Miners {
+				for _, miner := range connectedMiners {
 					err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain.BlockChain}, &reply)
 				}
 			} else {
-				for _, miner := range connectedMiners.Miners {
+				for _, miner := range connectedMiners {
 					err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: ownLongestBlockChain}, &reply)
 				}
 			}
@@ -282,11 +279,11 @@ func (minerKey *MinerKey) ReceiveOperation(operation Operation, reply *bool) err
 
 		// connectedMiners.Lock()
 
-		for key, miner := range connectedMiners.Miners {
+		for key, miner := range connectedMiners {
 			err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
 
 			if err != nil {
-				delete(connectedMiners.Miners, key)
+				delete(connectedMiners, key)
 			}
 		}
 
@@ -321,12 +318,12 @@ func (artkey *ArtKey) AddShape(operation Operation, reply *Block) error {
 	// connectedMiners.Lock()
 
 	// Floods the network of miners with Operations
-	for key, miner := range connectedMiners.Miners {
+	for key, miner := range connectedMiners {
 
 		err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
 
 		if err != nil {
-			delete(connectedMiners.Miners, key)
+			delete(connectedMiners, key)
 		}
 	}
 
@@ -627,11 +624,11 @@ func SendBlockInfo(block Block) error {
 
 	// connectedMiners.Lock()
 
-	for key, miner := range connectedMiners.Miners {
+	for key, miner := range connectedMiners {
 		err := miner.Cli.Call("MinerKey.ReceiveBlock", block, &replyStr)
 		if err != nil {
 			fmt.Println("Connection error in SendBlockInfo: ", err.Error())
-			delete(connectedMiners.Miners, key)
+			delete(connectedMiners, key)
 		}
 	}
 
@@ -820,18 +817,16 @@ func InitHeartbeat(cli *rpc.Client, pubKey ecdsa.PublicKey, heartBeat uint32) {
 // Connect to the miners that the server has given.
 // Checks if the address already exists in ConnectedMiners map, it will skip connecting to them again.
 func ConnectToMiners(addrSet []net.Addr, currentAddress net.Addr, currentPubKey ecdsa.PublicKey) {
-
 	for i := 0; i < len(addrSet); i++ {
 		addr := addrSet[i].String()
 
-		if _, ok := connectedMiners.Miners[addr]; !ok {
+		if _, ok := connectedMiners[addr]; !ok {
 			cli, err := rpc.Dial("tcp", addr)
-
 			var reply MinerInfo
 			err = cli.Call("MinerKey.RegisterMiner", MinerInfo{Address: currentAddress, Key: currentPubKey}, &reply)
 			HandleError(err)
 
-			connectedMiners.Miners[reply.Address.String()] = Miner{Address: reply.Address, Key: reply.Key, Cli: cli}
+			connectedMiners[reply.Address.String()] = Miner{Address: reply.Address, Key: reply.Key, Cli: cli}
 		}
 	}
 }
@@ -842,7 +837,7 @@ func GetNodes(cli *rpc.Client, minNumberConnections int) {
 
 		// connectedMiners.Lock()
 
-		if len(connectedMiners.Miners) < minNumberConnections {
+		if len(connectedMiners) < minNumberConnections {
 
 			var addrSet []net.Addr
 
@@ -881,13 +876,13 @@ func SyncMinersLongestChain() {
 
 		// connectedMiners.Lock()
 
-		if len(connectedMiners.Miners) > 0 {
+		if len(connectedMiners) > 0 {
 
 			longestBlockChain := globalChain
 			blockList = longestBlockChain
 			var reply string
 
-			for _, miner := range connectedMiners.Miners {
+			for _, miner := range connectedMiners {
 				miner.Cli.Call("MinerKey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain}, &reply)
 			}
 		}
@@ -1072,12 +1067,12 @@ func (artkey *ArtKey) ValidateDelete(operation Operation, reply *bool) error {
 
 	// connectedMiners.Lock()
 
-	for key, miner := range connectedMiners.Miners {
+	for key, miner := range connectedMiners {
 
 		err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
 
 		if err != nil {
-			delete(connectedMiners.Miners, key)
+			delete(connectedMiners, key)
 		}
 	}
 
@@ -1109,7 +1104,7 @@ func main() {
 	privKey = *priv
 	pubKey = privKey.PublicKey
 
-	lis, err := net.Listen("tcp", os.Args[4]+":0")
+	lis, err := net.Listen("tcp", os.Args[4])
 	minerAddr = lis.Addr()
 
 	cli, _ := rpc.Dial("tcp", serverAddr)
@@ -1120,7 +1115,9 @@ func main() {
 	artKey := new(ArtKey)
 	rpc.Register(artKey)
 
-	err = cli.Call("RServer.Register", MinerInfo{Address: minerAddr, Key: pubKey}, &settings)
+	tcpAddr, _ := net.ResolveTCPAddr("tcp", os.Args[5])
+
+	err = cli.Call("RServer.Register", MinerInfo{Address: tcpAddr, Key: pubKey}, &settings)
 	HandleError(err)
 
 	blockList = append(blockList, Block{Hash: settings.GenesisBlockHash, PathLength: 1, IsEndBlock: true})
