@@ -19,13 +19,14 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"time"
 
 	"./blockartlib"
 )
 
 func main() {
 	minerAddr := "[::]:62140"
-	validateNum := uint8(3)
+	validateNum := uint8(2)
 
 	privateKeyBytesRestored, _ := hex.DecodeString(os.Args[1])
 	privKey, _ := x509.ParseECPrivateKey(privateKeyBytesRestored)
@@ -36,9 +37,13 @@ func main() {
 		return
 	}
 
+	time.Sleep(500 * time.Millisecond)
+
 	// Add a orange square.
 	_, _, _, err1 := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 120 L 20 120 L 20 140 L 0 140 Z", "transparent", "black")
 	checkError(err1)
+
+	time.Sleep(30 * time.Seconds)
 
 	// Close the canvas.
 	_, err2 := canvas.CloseCanvas()

@@ -19,16 +19,19 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"time"
 
 	"./blockartlib"
 )
 
 func main() {
-	minerAddr := "[::]:61972"
-	validateNum := uint8(3)
+	minerAddr := "[::]:60660"
+	validateNum := uint8(2)
 
 	privateKeyBytesRestored, _ := hex.DecodeString(os.Args[1])
 	privKey, _ := x509.ParseECPrivateKey(privateKeyBytesRestored)
+
+	time.Sleep(10 * time.Millisecond)
 
 	// Open a canvas.
 	canvas, settings, err := blockartlib.OpenCanvas(minerAddr, *privKey)
@@ -44,13 +47,21 @@ func main() {
 	_, _, _, derr := canvas.AddShape(validateNum, blockartlib.PATH, "M 30 60 L 50 60 L 50 80 Z", "transparent", "green")
 	checkError(derr)
 
-	// Out of bound error
-	_, _, _, err2 := canvas.AddShape(validateNum, blockartlib.PATH, "M 60 60 L 1025 60", "transparent", "green")
-	checkError(err2)
+	time.Sleep(500 * time.Millisecond)
 
 	// Delete green square
 	_, derr2 := canvas.DeleteShape(validateNum, sh)
 	checkError(derr2)
+
+	// Out of bound error
+	_, _, _, err2 := canvas.AddShape(validateNum, blockartlib.PATH, "M 60 60 L 1025 60", "transparent", "green")
+	checkError(err2)
+
+	time.Sleep(3 * time.Minute)
+
+	svgs, _ := blockartlib.GetAllSVGs(canvas)
+	blockartlib.CreateCanvasHTML(svgs, "3", settings)
+	fmt.Println("HERE ARE THE SVG: ", svgs)
 
 	// Close the canvas.
 	_, err3 := canvas.CloseCanvas()

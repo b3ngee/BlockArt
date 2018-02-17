@@ -570,9 +570,9 @@ func (canvasObj CanvasObj) GetShapes(blockHash string) (shapeHashes []string, er
 ///////////////////////////////// HELPER FUNCTIONS BELOW
 
 // Retrieves all the PATH shapes from Ink Miner's local longest blockchain and creates an HTML file of the Canvas
-func CreateCanvasHTML(paths []string, cSettings CanvasSettings) {
+func CreateCanvasHTML(paths []string, version string, cSettings CanvasSettings) {
 
-	f, err := os.Create("Canvas.html")
+	f, err := os.Create("Canvas" + version + ".html")
 	HandleError(err)
 
 	svgPath := "<svg height=\"" + strconv.Itoa(int(cSettings.CanvasYMax)) + "\" width=\"" + strconv.Itoa(int(cSettings.CanvasXMax)) + "\">"

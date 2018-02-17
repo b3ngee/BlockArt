@@ -590,15 +590,21 @@ func FindLastBlockOfLongestChain() []*Block {
 	tempMaxLength := -1
 	lastBlocks := []*Block{}
 
-	for i := len(blockList) - 1; i >= 0; i-- {
-		currBlock := blockList[i]
+	for {
+		for i := len(blockList) - 1; i >= 0; i-- {
+			currBlock := blockList[i]
 
-		if currBlock.IsEndBlock && currBlock.PathLength >= tempMaxLength {
-			if currBlock.PathLength > tempMaxLength {
-				lastBlocks = []*Block{}
-				tempMaxLength = currBlock.PathLength
+			if currBlock.IsEndBlock && currBlock.PathLength >= tempMaxLength {
+				if currBlock.PathLength > tempMaxLength {
+					lastBlocks = []*Block{}
+					tempMaxLength = currBlock.PathLength
+				}
+				lastBlocks = append(lastBlocks, &blockList[i])
 			}
-			lastBlocks = append(lastBlocks, &blockList[i])
+		}
+
+		if len(lastBlocks) > 0 {
+			break
 		}
 	}
 
@@ -650,14 +656,6 @@ func (minerKey *MinerKey) ReceiveBlock(receivedBlock Block, reply *string) error
 		return nil
 	}
 
-	// Check if previous hash is a block that exists in the block chain
-	var previousBlock *Block
-	if prevBlock, exists := CheckPreviousBlock(previousHash); exists {
-		previousBlock = prevBlock
-	} else {
-		return errors.New("Failed to validate hash of a previous block")
-	}
-
 	// Check if received block is a No-Op or Op block based on length of operations
 	if len(operations) == 0 {
 		if !ComputeTrailingZeroes(hash, settings.PoWDifficultyNoOpBlock) {
@@ -674,6 +672,14 @@ func (minerKey *MinerKey) ReceiveBlock(receivedBlock Block, reply *string) error
 		} else {
 			return errors.New("Op block proof of work does not match the zeroes")
 		}
+	}
+
+	// Check if previous hash is a block that exists in the block chain
+	var previousBlock *Block
+	if prevBlock, exists := CheckPreviousBlock(previousHash); exists {
+		previousBlock = prevBlock
+	} else {
+		return errors.New("Failed to validate hash of a previous block")
 	}
 
 	// After all validations pass, we set properties of block, append to blockchain and send to network
@@ -851,7 +857,7 @@ func GetNodes(cli *rpc.Client, minNumberConnections int) {
 			ConnectToMiners(addrSet, minerAddr, pubKey)
 		}
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(3 * time.Second)
 	}
 }
 
@@ -891,7 +897,7 @@ func SyncMinersLongestChain() {
 
 		// connectedMiners.Unlock()
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(7 * time.Second)
 	}
 }
 
@@ -955,7 +961,7 @@ func CheckOperationValidation(uniqueID string) (Block, bool) {
 			}
 		}
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(3 * time.Second)
 		timeOut = timeOut + 1
 	}
 }
