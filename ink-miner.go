@@ -1108,7 +1108,7 @@ func main() {
 	privKey = *priv
 	pubKey = privKey.PublicKey
 
-	lis, err := net.Listen("tcp", ":0")
+	lis, err := net.Listen("tcp", os.Args[4]+":0")
 	minerAddr = lis.Addr()
 
 	cli, _ := rpc.Dial("tcp", serverAddr)
