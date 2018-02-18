@@ -363,17 +363,20 @@ func GenerateBlock() {
 		zeroString := strings.Repeat("0", difficulty)
 
 		for {
+
 			if isNoOp && len(operations) > 0 {
 				break
 			}
 
-			if (*prevBlock).Hash != globalChain[len(globalChain)-1].Hash {
-				break
-			}
+			// if (*prevBlock).Hash != globalChain[len(globalChain)-1].Hash {
+			// 	fmt.Println("This is the second break")
+			// 	break
+			// }
 
 			hash := ComputeBlockHash(newBlock)
 			subString := hash[len(hash)-difficulty:]
 			if zeroString == subString {
+
 				newBlock.Hash = hash
 				newBlock.IsEndBlock = true
 				newBlock.PathLength = prevBlock.PathLength + 1
