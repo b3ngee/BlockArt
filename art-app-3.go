@@ -39,7 +39,7 @@ func main() {
 	_, _, _, err2 := canvas.AddShape(validateNum, blockartlib.PATH, "M 60 60 L 1025 60", "transparent", "green")
 	checkError(err2)
 
-	time.Sleep(120 * time.Second)
+	time.Sleep(90 * time.Second)
 
 	svgs, _ := blockartlib.GetAllSVGs(canvas)
 	blockartlib.CreateCanvasHTML(svgs, "3", settings)

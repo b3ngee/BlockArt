@@ -49,7 +49,7 @@ func main() {
 	_, derr := canvas.DeleteShape(validateNum, sh)
 	checkError(derr)
 
-	time.Sleep(120 * time.Second)
+	time.Sleep(90 * time.Second)
 
 	svgs, _ := blockartlib.GetAllSVGs(canvas)
 	blockartlib.CreateCanvasHTML(svgs, "4-2", settings)

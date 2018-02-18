@@ -35,7 +35,7 @@ func main() {
 	_, derr2 := canvas.DeleteShape(validateNum, "This doesn't exist")
 	checkError(derr2)
 
-	time.Sleep(120 * time.Second)
+	time.Sleep(90 * time.Second)
 
 	svgs, _ := blockartlib.GetAllSVGs(canvas)
 	blockartlib.CreateCanvasHTML(svgs, "1", settings)
