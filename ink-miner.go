@@ -135,7 +135,7 @@ var globalChain []Block
 
 // Registers incoming Miner that wants to connect.
 func (minerKey *MinerKey) RegisterMiner(minerInfo MinerInfo, reply *MinerInfo) error {
-	// connectedMiners.Lock()
+
 	cli, err := rpc.Dial("tcp", minerInfo.Address.String())
 
 	miner := Miner{Address: minerInfo.Address, Key: minerInfo.Key, Cli: cli}
@@ -143,37 +143,7 @@ func (minerKey *MinerKey) RegisterMiner(minerInfo MinerInfo, reply *MinerInfo) e
 
 	*reply = MinerInfo{Address: tcpAddr, Key: pubKey}
 
-	// connectedMiners.Unlock()
-
 	return err
-}
-
-// Checks blocklist against longest chain and find unvalidated operations in the shorter chain.
-// Moves the unvalidated operation to the operations queue when it finds them.
-func checkUnvalidatedOperation() {
-	for i := len(blockList); i > 0; i-- {
-
-		if blockList[i].IsEndBlock && (blockList[i].Hash != globalChain[0].Hash) {
-
-			shorterChain := FindBlockChainPath(blockList[i])
-
-			for j := len(shorterChain); j > 1; j-- {
-
-				for k := 0; k < len(shorterChain[j].SetOPs); k++ {
-
-					// Compares the end block path length and the path length of the block that has the current operation
-					if (shorterChain[len(shorterChain)-1].PathLength - shorterChain[j].PathLength) < shorterChain[j].SetOPs[k].ValidateNum {
-
-						// If it is validated, append to operations queue. Otherwise, drop it and let timeout handle the case.
-						err := ValidateOperationForLongestChain(shorterChain[j].SetOPs[k], globalChain)
-						if err == nil {
-							operations = append(operations, shorterChain[j].SetOPs[k])
-						}
-					}
-				}
-			}
-		}
-	}
 }
 
 // Updates the longest block chain in the Miner Network.
@@ -196,26 +166,17 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain LongestBlock
 		blockList = longestBlockChain.BlockChain
 		globalChain = blockList
 
-		// connectedMiners.Lock()
-
 		for _, miner := range connectedMiners {
 			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain.BlockChain}, &reply)
 		}
 
-		// connectedMiners.Unlock()
 	} else if len(longestBlockChain.BlockChain) < len(ownLongestBlockChain) {
-
-		// Calls Helper function to take care of edge case where there are unvalidated OP blocks in shorter chain
-		// checkUnValidatedOperation()
-
-		// connectedMiners.Lock()
 
 		// send own longest blockchain to neighbours
 		for _, miner := range connectedMiners {
 			err = miner.Cli.Call("Minerkey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: ownLongestBlockChain}, &reply)
 		}
 
-		// connectedMiners.Unlock()
 	} else {
 
 		// equal length, check whether blockchain are duplicates
@@ -227,9 +188,6 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain LongestBlock
 				break
 			}
 		}
-		// not the same blockchain
-
-		// connectedMiners.Lock()
 
 		if isDuplicate != true {
 
@@ -248,8 +206,6 @@ func (minerKey *MinerKey) UpdateLongestBlockChain(longestBlockChain LongestBlock
 		} else {
 			err = nil
 		}
-
-		// connectedMiners.Unlock()
 	}
 
 	return err
@@ -276,8 +232,6 @@ func (minerKey *MinerKey) ReceiveOperation(operation Operation, reply *bool) err
 		operationsHistory = append(operationsHistory, operation.UniqueID)
 		operations = append(operations, operation)
 
-		// connectedMiners.Lock()
-
 		for key, miner := range connectedMiners {
 			err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
 
@@ -287,8 +241,6 @@ func (minerKey *MinerKey) ReceiveOperation(operation Operation, reply *bool) err
 				}
 			}
 		}
-
-		// connectedMiners.Unlock()
 	}
 
 	return nil
@@ -316,8 +268,6 @@ func (artkey *ArtKey) AddShape(operation Operation, reply *Block) error {
 	operationsHistory = append(operationsHistory, operation.UniqueID)
 	operations = append(operations, operation)
 
-	// connectedMiners.Lock()
-
 	// Floods the network of miners with Operations
 	for key, miner := range connectedMiners {
 
@@ -329,8 +279,6 @@ func (artkey *ArtKey) AddShape(operation Operation, reply *Block) error {
 			}
 		}
 	}
-
-	// connectedMiners.Unlock()
 
 	// put reply as return type of below
 	block, valid := CheckOperationValidation(operation.UniqueID)
@@ -367,8 +315,7 @@ func GetInkAmount(prevBlock *Block) uint32 {
 }
 
 func GenerateBlock() {
-	// FOR TESTING
-	// go printBlockChain()
+
 	for {
 		var difficulty int
 		var isNoOp bool
@@ -630,8 +577,6 @@ func FindBlockChainPath(block Block) []Block {
 func SendBlockInfo(block Block) error {
 	replyStr := ""
 
-	// connectedMiners.Lock()
-
 	for key, miner := range connectedMiners {
 		err := miner.Cli.Call("MinerKey.ReceiveBlock", block, &replyStr)
 		if err != nil {
@@ -640,8 +585,6 @@ func SendBlockInfo(block Block) error {
 			}
 		}
 	}
-
-	// connectedMiners.Unlock()
 
 	return nil
 }
@@ -850,8 +793,6 @@ func ConnectToMiners(addrSet []net.Addr, currentAddress net.Addr, currentPubKey 
 func GetNodes(cli *rpc.Client, minNumberConnections int) {
 	for {
 
-		// connectedMiners.Lock()
-
 		if len(connectedMiners) < minNumberConnections {
 
 			var addrSet []net.Addr
@@ -887,8 +828,6 @@ func ComputeBlockHash(block Block) string {
 func SyncMinersLongestChain() {
 	for {
 
-		// connectedMiners.Lock()
-
 		if len(connectedMiners) > 0 {
 
 			longestBlockChain := globalChain
@@ -899,8 +838,6 @@ func SyncMinersLongestChain() {
 				miner.Cli.Call("MinerKey.UpdateLongestBlockChain", LongestBlockChain{BlockChain: longestBlockChain}, &reply)
 			}
 		}
-
-		// connectedMiners.Unlock()
 
 		time.Sleep(7 * time.Second)
 	}
@@ -926,7 +863,7 @@ func CheckOperationValidation(uniqueID string) (Block, bool) {
 	for {
 		// Times out, sends reply back (2 min)
 		if timeOut == 400 {
-			fmt.Println(opToCheck)
+			fmt.Println("Unvalidated Operation SVG String: " + opToCheck.ShapeSvgString)
 			return Block{}, false
 		}
 
@@ -1078,8 +1015,6 @@ func (artkey *ArtKey) ValidateDelete(operation Operation, reply *bool) error {
 
 	// Floods the network of miners with Operations
 
-	// connectedMiners.Lock()
-
 	for key, miner := range connectedMiners {
 
 		err := miner.Cli.Call("MinerKey.ReceiveOperation", operation, &reply)
@@ -1090,8 +1025,6 @@ func (artkey *ArtKey) ValidateDelete(operation Operation, reply *bool) error {
 			}
 		}
 	}
-
-	// connectedMiners.Unlock()
 
 	_, valid := CheckOperationValidation(operation.UniqueID)
 	*reply = valid
@@ -1152,14 +1085,18 @@ func main() {
 
 	go SyncMinersLongestChain()
 
+	go printForDemo()
+
 	GenerateBlock()
 }
 
 // FOR TESTING
-func printBlockChain() {
+func printForDemo() {
 	for {
-		time.Sleep(10 * time.Second)
-		fmt.Println(globalChain)
+		fmt.Println("Length of the Current Global Chain: " + strconv.Itoa(len(globalChain)))
+		fmt.Print("Connected Miners ( " + strconv.Itoa(len(connectedMiners)) + ") : ")
+		fmt.Println(connectedMiners)
+		time.Sleep(30 * time.Second)
 	}
 }
 
