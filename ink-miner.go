@@ -366,10 +366,9 @@ func GenerateBlock() {
 				break
 			}
 
-			// if (*prevBlock).Hash != globalChain[len(globalChain)-1].Hash {
-			// 	fmt.Println("This is the second break")
-			// 	break
-			// }
+			if (*prevBlock).Hash != globalChain[len(globalChain)-1].Hash {
+				break
+			}
 
 			hash := ComputeBlockHash(newBlock)
 			subString := hash[len(hash)-difficulty:]
