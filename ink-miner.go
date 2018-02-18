@@ -302,12 +302,14 @@ func (artkey *ArtKey) GetInk(empty string, inkAmount *uint32) error {
 }
 
 // UNUSED
-func GetInkAmount() uint32 {
-	for i := len(globalChain) - 1; i >= 1; i-- {
-		if reflect.DeepEqual(globalChain[i].MinerPubKey, pubKey) {
-			return globalChain[i].TotalInkAmount
+func GetInkAmount(prevBlock *Block) uint32 {
+	temp := *prevBlock
+	for i := prevBlock.PathLength; i > 1; i-- {
+		if reflect.DeepEqual(temp.MinerPubKey, pubKey) {
+			return temp.TotalInkAmount
 			break
 		}
+		temp = *temp.PreviousBlock
 	}
 	return 0
 }
@@ -361,7 +363,6 @@ func GenerateBlock() {
 		zeroString := strings.Repeat("0", difficulty)
 
 		for {
-
 			if isNoOp && len(operations) > 0 {
 				break
 			}
@@ -373,12 +374,11 @@ func GenerateBlock() {
 			hash := ComputeBlockHash(newBlock)
 			subString := hash[len(hash)-difficulty:]
 			if zeroString == subString {
-
 				newBlock.Hash = hash
 				newBlock.IsEndBlock = true
 				newBlock.PathLength = prevBlock.PathLength + 1
 				newBlock.PreviousBlock = prevBlock
-				newBlock.InkBank = GetInkAmount()
+				newBlock.InkBank = prevBlock.TotalInkAmount
 				newBlock.TotalInkAmount = newBlock.InkBank + ComputeOpCostForMiner(newBlock.MinerPubKey, copyOfOps)
 				prevBlock.IsEndBlock = false
 
@@ -629,7 +629,7 @@ func (minerKey *MinerKey) ReceiveBlock(receivedBlock Block, reply *string) error
 	// After all validations pass, we set properties of block, append to blockchain and send to network
 	receivedBlock.PathLength = previousBlock.PathLength + 1
 	receivedBlock.PreviousBlock = previousBlock
-	receivedBlock.InkBank = GetInkAmount()
+	receivedBlock.InkBank = previousBlock.TotalInkAmount
 	receivedBlock.TotalInkAmount = receivedBlock.InkBank + ComputeOpCostForMiner(receivedBlock.MinerPubKey, operations) // add any operations performed by the miner that generated this block
 	previousBlock.IsEndBlock = false
 
