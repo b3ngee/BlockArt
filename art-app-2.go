@@ -12,7 +12,7 @@ import (
 
 func main() {
 	minerAddr := os.Args[2]
-	validateNum := uint8(3)
+	validateNum := uint8(2)
 
 	privateKeyBytesRestored, _ := hex.DecodeString(os.Args[1])
 	privKey, _ := x509.ParseECPrivateKey(privateKeyBytesRestored)
@@ -22,6 +22,8 @@ func main() {
 	if checkError(err) != nil {
 		return
 	}
+
+	fmt.Println("ValidateNum for this app: ", validateNum)
 
 	// Add a blue square.
 	_, _, _, err1 := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 30 L 20 30 L 20 50 L 0 50 Z", "transparent", "blue")
@@ -35,7 +37,7 @@ func main() {
 	_, _, _, err2 := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 150 L 1023 150 L 1023 1023 L 0 1023 Z", "purple", "blue")
 	checkError(err2)
 
-	time.Sleep(120 * time.Second)
+	time.Sleep(90 * time.Second)
 
 	svgs, _ := blockartlib.GetAllSVGs(canvas)
 	blockartlib.CreateCanvasHTML(svgs, "2", settings)
