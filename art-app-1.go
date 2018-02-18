@@ -23,6 +23,8 @@ func main() {
 		return
 	}
 
+	fmt.Println("ValidateNum for this app: ", validateNum)
+
 	// Add a red square.
 	_, _, _, err1 := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 0 L 20 0 L 20 20 L 0 20 Z", "transparent", "red")
 	checkError(err1)

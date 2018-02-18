@@ -12,7 +12,7 @@ import (
 
 func main() {
 	minerAddr := os.Args[2]
-	validateNum := uint8(3)
+	validateNum := uint8(1)
 
 	privateKeyBytesRestored, _ := hex.DecodeString(os.Args[1])
 	privKey, _ := x509.ParseECPrivateKey(privateKeyBytesRestored)
@@ -22,6 +22,8 @@ func main() {
 	if checkError(err) != nil {
 		return
 	}
+
+	fmt.Println("ValidateNum for this app: ", validateNum)
 
 	// Add a green square.
 	sh, _, _, err1 := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 60 L 20 60 L 20 80 L 0 80 Z", "transparent", "green")
