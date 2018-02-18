@@ -31,6 +31,8 @@ func main() {
 	_, _, _, derr := canvas.AddShape(validateNum, blockartlib.PATH, "M 30 0 L 50 0 L 50 20 Z", "purple", "red")
 	checkError(derr)
 
+	time.Sleep(15 * time.Second)
+
 	// Delete non-existent thing
 	_, derr2 := canvas.DeleteShape(validateNum, "This doesn't exist")
 	checkError(derr2)
