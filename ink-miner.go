@@ -1094,8 +1094,10 @@ func main() {
 func printForDemo() {
 	for {
 		fmt.Println("Length of the Current Global Chain: " + strconv.Itoa(len(globalChain)))
-		fmt.Print("Connected Miners ( " + strconv.Itoa(len(connectedMiners)) + ") : ")
-		fmt.Println(connectedMiners)
+		fmt.Println("Connected Miners (" + strconv.Itoa(len(connectedMiners)) + ") : ")
+		for key, _ := range connectedMiners {
+			fmt.Println(key)
+		}
 		time.Sleep(30 * time.Second)
 	}
 }
