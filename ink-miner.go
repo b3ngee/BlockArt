@@ -924,8 +924,9 @@ func CheckOperationValidation(uniqueID string) (Block, bool) {
 	foundBlock := false
 
 	for {
-		// Times out, sends reply back (1 min)
-		if timeOut == 200 {
+		// Times out, sends reply back (2 min)
+		if timeOut == 400 {
+			fmt.Println(opToCheck)
 			return Block{}, false
 		}
 
