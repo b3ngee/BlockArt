@@ -45,11 +45,15 @@ func main() {
 	sh, _, _, err2 := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 120 L 20 120 L 20 140 L 0 140 Z", "yellow", "black")
 	checkError(err2)
 
-	time.Sleep(15 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	// Delete previous shape
 	_, derr := canvas.DeleteShape(validateNum, sh)
 	checkError(derr)
+
+	// Delete previous shape
+	_, derr2 := canvas.DeleteShape(validateNum, sh)
+	checkError(derr2)
 
 	time.Sleep(90 * time.Second)
 

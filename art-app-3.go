@@ -31,7 +31,7 @@ func main() {
 	_, _, _, derr := canvas.AddShape(validateNum, blockartlib.PATH, "M 30 60 L 50 60 L 50 80 Z", "transparent", "green")
 	checkError(derr)
 
-	time.Sleep(15 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	// Delete green square
 	_, derr2 := canvas.DeleteShape(validateNum, sh)
